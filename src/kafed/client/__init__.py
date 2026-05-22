@@ -1,1 +1,2 @@
-"""KAFED 客户端 — HTTP + LocalBackend 双模式。"""
+"""KAFED 客户端 — LocalBackend + FlowVisualizer。"""
+from kafed.client.local_backend import KafedLocalBackend

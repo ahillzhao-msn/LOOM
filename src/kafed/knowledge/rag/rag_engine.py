@@ -47,7 +47,7 @@ class RAGEngine:
         query_id = str(uuid.uuid4())
 
         # 加载 centroid 域上下文
-        centroid_path = cfg.data_dir / "centroids.json"
+        centroid_path = cfg.data_dir / cfg.centroids_filename
         domain_context = None
         if domain and centroid_path.exists():
             try:
@@ -119,7 +119,7 @@ class RAGEngine:
             centroids[domain] = centroid
 
         # 补充 labels 中的域（可能无 Chroma 数据，但参与了分类）
-        labels_path = self._cfg.data_dir / "classification_labels.jsonl"
+        labels_path = self._cfg.data_dir / self._cfg.labels_filename
         if labels_path.exists():
             from kafed.knowledge.classify.classify import build_centroids_from_labels
             label_centroids = build_centroids_from_labels()
@@ -128,7 +128,7 @@ class RAGEngine:
                     centroids[domain] = info["centroid"]
 
         # 保存到磁盘
-        centroid_path = self._cfg.data_dir / "centroids.json"
+        centroid_path = self._cfg.data_dir / self._cfg.centroids_filename
         centroid_data = {
             k: {"centroid": v, "count": self._vs.count_by_domain(k) or 0}
             for k, v in centroids.items()

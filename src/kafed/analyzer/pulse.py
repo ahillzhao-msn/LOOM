@@ -1,323 +1,268 @@
 """
-KAFED Analyzer — 脈動排程引擎。
+KAFED Analyzer — 任務規劃層。
 
-吸收 pulse_manager.py 的全部邏輯。
-管理任務註冊表、條件評估、資源檢測、優先級排序、執行調度。
+職責轉變（2026-05-22）：
+  之前：pulse 充當執行引擎（內部排程 + 執行）
+  現在：pulse 已提升為 Hermes 層工具 (~/.hermes/bin/pulse-check.py)
+         Analyzer 回歸規劃職責：定義任務、制定排程、生成 cron 配置
+
+本模塊提供：
+  1. TaskConfig — 任務定義數據結構（共用）
+  2. register_task / unregister_task / list_tasks — 任務規劃 API
+  3.建議任務清單 — Analyzer 層認為「系統需要哪些定期任務」
 """
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-import sys
-import time
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Optional
-
-from kafed.analyzer.config import TaskConfig, TaskType, ResourceType, DEFAULT_TASKS
-
-HOME = Path.home()
-PULSE_DIR = Path(os.getenv("KAFED_DATA_DIR", str(HOME / ".hermes" / "data")))
-STATE_FILE = PULSE_DIR / "pulse_state.json"
-
-# ── 工具函數 ──────────────────────────────────
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional
 
 
-def log(msg: str):
-    print(f"[pulse] {msg}", file=sys.stderr)
+class TaskType(Enum):
+    SCRIPT = "script"
+    ANALYSIS = "analysis"
+    MAINTENANCE = "maintenance"
+    FLYWHEEL = "flywheel"
 
 
-def now_ts() -> float:
-    return time.time()
+class ResourceType(Enum):
+    CPU = "cpu"
+    GPU = "gpu"
+    API = "api"
+    NETWORK = "network"
+    NONE = "none"
 
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+@dataclass
+class TaskConfig:
+    """單個分析任務的配置定義。"""
+    name: str
+    description: str = ""
+    task_type: TaskType = TaskType.SCRIPT
+    script: str = ""
+    resources: list[ResourceType] = field(default_factory=list)
+    cooldown: int = 3600
+    max_age: int = 86400
+    guard: str = ""
+    deps: list[str] = field(default_factory=list)
+    priority: int = 3
+    timeout: int = 600
+    max_retries: int = 1
+    belongs_to: str = "analyzer"
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "task_type": self.task_type.value,
+            "script": self.script,
+            "resources": [r.value for r in self.resources],
+            "cooldown": self.cooldown,
+            "max_age": self.max_age,
+            "guard": self.guard,
+            "deps": self.deps,
+            "priority": self.priority,
+            "timeout": self.timeout,
+            "belongs_to": self.belongs_to,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> TaskConfig:
+        return cls(
+            name=data["name"],
+            description=data.get("description", ""),
+            task_type=TaskType(data.get("task_type", "script")),
+            script=data.get("script", ""),
+            resources=[ResourceType(r) for r in data.get("resources", [])],
+            cooldown=data.get("cooldown", 3600),
+            max_age=data.get("max_age", 86400),
+            guard=data.get("guard", ""),
+            deps=data.get("deps", []),
+            priority=data.get("priority", 3),
+            timeout=data.get("timeout", 600),
+            belongs_to=data.get("belongs_to", "analyzer"),
+        )
 
 
-def days_since(ts_str: Optional[str]) -> float:
-    if not ts_str:
-        return float("inf")
+# ── 任務規劃註冊表 ─────────────────────────────
+# 這裡定義 Analyzer 層認為系統需要的定期任務。
+# 實際執行由 Hermes cron + pulse-check.py 負責。
+# register_task() 提供給各組件規劃自己的任務。
+
+_TASK_REGISTRY: dict[str, TaskConfig] = {}
+_TASK_REGISTRY_PATH: str = ""
+
+
+def _registry_path() -> Path:
+    global _TASK_REGISTRY_PATH
+    if not _TASK_REGISTRY_PATH:
+        from kafed.config import get_config
+        from pathlib import Path
+        _TASK_REGISTRY_PATH = str(get_config().data_dir / "task_registry.yaml")
+    from pathlib import Path
+    return Path(_TASK_REGISTRY_PATH)
+
+
+def register_task(config: TaskConfig):
+    """註冊任務。自動持久化到 task_registry.yaml。"""
+    _TASK_REGISTRY[config.name] = config
+    _save_registry()
+
+
+def unregister_task(name: str):
+    """取消註冊任務。自動持久化。"""
+    _TASK_REGISTRY.pop(name, None)
+    _save_registry()
+
+
+def list_tasks() -> list[TaskConfig]:
+    """列出所有註冊的任務。"""
+    return list(_TASK_REGISTRY.values())
+
+
+def _save_registry() -> None:
+    """寫入任務註冊表到磁碟。"""
     try:
-        dt = datetime.fromisoformat(ts_str)
-        return (datetime.now(timezone.utc) - dt).total_seconds() / 86400
-    except (ValueError, TypeError):
-        return float("inf")
+        import yaml
+        rp = _registry_path()
+        rp.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "version": 1,
+            "tasks": [t.to_dict() for t in _TASK_REGISTRY.values()],
+        }
+        with open(rp, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass  # 非關鍵操作，失敗不影響運行
 
 
-# ── 狀態管理 ──────────────────────────────────
+def _load_registry() -> None:
+    """從磁碟加載任務註冊表。"""
+    global _TASK_REGISTRY
+    rp = _registry_path()
+    if not rp.exists():
+        return
+    try:
+        import yaml
+        with open(rp) as f:
+            data = yaml.safe_load(f)
+        if data and "tasks" in data:
+            for t in data["tasks"]:
+                config = TaskConfig.from_dict(t)
+                _TASK_REGISTRY[config.name] = config
+    except Exception:
+        pass
 
 
-def load_state() -> dict:
-    if STATE_FILE.exists():
-        try:
-            data = json.loads(STATE_FILE.read_text())
-            if isinstance(data, dict) and "tasks" not in data:
-                return {"tasks": data, "version": 2, "last_tick": now_iso()}
-            return data
-        except (json.JSONDecodeError, Exception):
-            pass
-    return {"version": 2, "tasks": {}, "last_tick": None, "last_tick_result": None}
+# ── Analyzer 建議的默認任務清單 ───────────────
+# 這些是 Analyzer 層認為「該有」的定期任務。
+# 實際註冊到 cron 需要通過 cronjob 工具。
+
+RECOMMENDED_TASKS: list[TaskConfig] = [
+    TaskConfig(
+        name="centroid_rebuild",
+        description="重建 embedding centroid（基於 KAFED 新樣本）",
+        task_type=TaskType.MAINTENANCE,
+        resources=[ResourceType.GPU],
+        cooldown=3600,
+        max_age=43200,
+        priority=3,
+        belongs_to="knowledge",
+    ),
+    TaskConfig(
+        name="flywheel_daily",
+        description="每日維護：知識攝入 → centroid 一致性檢查",
+        task_type=TaskType.FLYWHEEL,
+        resources=[ResourceType.CPU, ResourceType.GPU],
+        cooldown=21600,
+        max_age=86400,
+        priority=4,
+        belongs_to="analyzer",
+    ),
+    TaskConfig(
+        name="flywheel_weekly",
+        description="每週審計：知識深度維護 → 訓練信號檢查",
+        task_type=TaskType.FLYWHEEL,
+        resources=[ResourceType.CPU, ResourceType.GPU],
+        cooldown=432000,
+        max_age=604800,
+        guard="days_since_last_run >= 5",
+        priority=3,
+        belongs_to="analyzer",
+    ),
+    TaskConfig(
+        name="yicenet_flywheel",
+        description="掃描會話，增量訓練 YiCeNet 世界模型",
+        task_type=TaskType.FLYWHEEL,
+        resources=[ResourceType.GPU],
+        cooldown=21600,
+        max_age=172800,
+        guard="yicenet_buffer_ready()",
+        priority=2,
+        belongs_to="analyzer",
+    ),
+]
+
+# 初始化時註冊推薦任務 + 加載持久化任務
+for t in RECOMMENDED_TASKS:
+    register_task(t)
+_load_registry()
 
 
-def save_state(state: dict):
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, indent=2, default=str))
+# ── 向下兼容包裝 ──────────────────────────────
+# 以下函數供 engine.py / __init__.py 導入用。
+# 實際執行已遷移至 ~/.hermes/bin/pulse-check.py。
+
+import json
+import subprocess
+import sys as _sys
+from pathlib import Path as _Path
+
+from kafed.config import get_config
 
 
-def get_task_state(state: dict, task_name: str) -> dict:
-    return state.setdefault("tasks", {}).setdefault(task_name, {
-        "last_run": None, "last_result": None, "missed_count": 0, "total_runs": 0,
-    })
+def _pulse_check_bin() -> str:
+    exe = get_config().pulse_check_script
+    if exe and exe.exists():
+        return str(exe)
+    return ""
 
 
-# ── 條件檢查 ──────────────────────────────────
-
-
-def check_guard(guard_expr: str, task_name: str, state: dict) -> bool:
-    """檢查保護條件。空表達式表示總是觸發。"""
-    if not guard_expr:
-        return True
-    
-    ts = get_task_state(state, task_name)
-    last_run = ts.get("last_run")
-    
-    # 內建 guards
-    if guard_expr == "yicenet_buffer_ready()":
-        buffer_path = HOME / "YiCeNet" / "data" / "flywheel_buffer.jsonl"
-        if not buffer_path.exists():
-            return False
-        try:
-            count = sum(1 for _ in open(buffer_path))
-            return count >= 20
-        except Exception:
-            return False
-    
-    if guard_expr.startswith("days_since_last_run"):
-        return days_since(last_run) >= 5  # 默認 5 天
-    
-    log(f"未知 guard: {guard_expr}，跳過")
-    return False
-
-
-def check_dependencies(deps: list[str], state: dict) -> bool:
-    """檢查依賴任務是否已完成。"""
-    for dep in deps:
-        dep_state = state.get("tasks", {}).get(dep, {})
-        if dep_state.get("last_result") is None:
-            return False
-    return True
-
-
-def check_resources_available(resources: list[ResourceType]) -> bool:
-    """檢查所需資源是否可用。"""
-    for r in resources:
-        if r == ResourceType.GPU:
-            # 快速 GPU 檢查
-            result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode != 0:
-                return False
-            # 檢查 VRAM 使用率
-            for line in result.stdout.strip().split("\n"):
-                try:
-                    used = int(line.strip())
-                    if used > 10000:  # >10GB VRAM，可能已被佔用
-                        return False
-                except ValueError:
-                    pass
-    return True
-
-
-# ── 任務選擇 ──────────────────────────────────
-
-
-def select_task(tasks: list[TaskConfig], state: dict) -> Optional[TaskConfig]:
-    """選出最高優先級的可行任務。"""
-    candidates = []
-    
-    for task in tasks:
-        ts = get_task_state(state, task.name)
-        last_run = ts.get("last_run")
-        elapsed = now_ts()
-        
-        if last_run:
-            try:
-                last_dt = datetime.fromisoformat(last_run)
-                elapsed = now_ts() - last_dt.timestamp()
-            except (ValueError, TypeError):
-                elapsed = float("inf")
-        
-        # 冷卻檢查
-        if elapsed < task.cooldown:
-            continue
-        
-        # 依賴檢查
-        if not check_dependencies(task.deps, state):
-            continue
-        
-        # Guard 條件
-        if not check_guard(task.guard, task.name, state):
-            continue
-        
-        # 最大間隔強制觸發
-        if elapsed >= task.max_age:
-            candidates.append((task, 999))  # 強制
-            continue
-        
-        # 資源可用
-        if not check_resources_available(task.resources):
-            continue
-        
-        candidates.append((task, task.priority))
-    
-    if not candidates:
-        return None
-    
-    # 按優先級降序
-    candidates.sort(key=lambda x: x[1], reverse=True)
-    return candidates[0][0]
-
-
-# ── 任務執行 ──────────────────────────────────
-
-
-def execute_task(task: TaskConfig, state: dict) -> tuple[bool, str]:
-    """執行任務。返回 (success, output)。"""
-    log(f"執行: {task.name}")
-    
-    if task.task_type == TaskType.SCRIPT or task.task_type in (TaskType.MAINTENANCE, TaskType.FLYWHEEL):
-        if not task.script:
-            return False, "無腳本路徑"
-        
-        try:
-            result = subprocess.run(
-                task.script,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=task.timeout,
-            )
-            output = result.stdout + result.stderr
-            success = result.returncode == 0
-            return success, output[:2000]  # 截短
-        except subprocess.TimeoutExpired:
-            return False, f"超時 ({task.timeout}s)"
-        except Exception as e:
-            return False, str(e)
-    
-    elif task.task_type == TaskType.ANALYSIS:
-        # 分析型任務——寫 trigger 文件供下次 LLM 會話處理
-        trigger_dir = PULSE_DIR / "pulse_triggers"
-        trigger_dir.mkdir(parents=True, exist_ok=True)
-        trigger_file = trigger_dir / f"{task.name}.trigger"
-        trigger_file.write_text(json.dumps({
-            "task": task.name,
-            "triggered_at": now_iso(),
-            "description": task.description,
-        }))
-        return True, f"trigger 已寫入 {trigger_file}"
-    
-    return False, f"未知任務類型: {task.task_type}"
-
-
-# ── 主入口 ──────────────────────────────────
-
-
-def pulse(tasks: Optional[list[TaskConfig]] = None) -> dict:
-    """一次脈動 tick。返回執行摘要。"""
-    if tasks is None:
-        tasks = DEFAULT_TASKS
-    
-    state = load_state()
-    state["last_tick"] = now_iso()
-    
-    # 選擇任務
-    task = select_task(tasks, state)
-    if task is None:
-        state["last_tick_result"] = "no_task"
-        save_state(state)
-        return {"status": "idle", "message": "無可行任務"}
-    
-    # 記錄執行前狀態
-    ts_state = get_task_state(state, task.name)
-    ts_state["last_run"] = now_iso()
-    ts_state["total_runs"] = ts_state.get("total_runs", 0) + 1
-    
-    # 執行
-    success, output = execute_task(task, state)
-    ts_state["last_result"] = 0 if success else 1
-    if not success:
-        ts_state["missed_count"] = ts_state.get("missed_count", 0) + 1
-    
-    # 更新狀態
-    state["last_tick_result"] = f"{task.name}: {'✅' if success else '❌'}"
-    save_state(state)
-    
-    return {
-        "status": "completed" if success else "failed",
-        "task": task.name,
-        "output": output[:500],
-    }
+def pulse() -> list[dict]:
+    """調用 pulse-check.py 執行一次 cron 看門狗掃描。"""
+    exe = _pulse_check_bin()
+    if not exe:
+        return [{"status": "error", "message": "pulse-check.py not found"}]
+    try:
+        r = subprocess.run(
+            [_sys.executable, exe],
+            capture_output=True, text=True, timeout=120,
+        )
+        return [{"status": "ok", "output": r.stdout.strip()}]
+    except Exception as e:
+        return [{"status": "error", "message": str(e)}]
 
 
 def status() -> dict:
-    """查看當前脈動狀態。"""
-    state = load_state()
-    return {
-        "last_tick": state.get("last_tick"),
-        "last_result": state.get("last_tick_result"),
-        "tasks": {
-            name: {
-                "last_run": ts.get("last_run"),
-                "last_result": "✅" if ts.get("last_result") == 0 else "❌" if ts.get("last_result") == 1 else None,
-                "total_runs": ts.get("total_runs", 0),
-                "missed": ts.get("missed_count", 0),
-            }
-            for name, ts in state.get("tasks", {}).items()
-        },
-    }
+    """返回脈動狀態（委託 cron jobs.json）。"""
+    try:
+        data = json.loads(
+            (get_config().data_dir / "cron_jobs.json").read_text()
+        )
+        jobs = []
+        for j in data.get("jobs", []):
+            jobs.append({
+                "name": j.get("name"),
+                "schedule": j.get("schedule_display", "?"),
+                "last_run": j.get("last_run_at", "never")[:19] if j.get("last_run_at") else "never",
+                "state": j.get("state", "?"),
+            })
+        return {"pulse_check": "active", "cron_jobs": jobs}
+    except Exception as e:
+        return {"pulse_check": "error", "error": str(e)}
 
 
 def run_task(task_name: str) -> dict:
-    """強制運行特定任務（跳過 guard）。"""
-    tasks = DEFAULT_TASKS
-    task_map = {t.name: t for t in tasks}
-    
-    if task_name not in task_map:
-        return {"status": "error", "message": f"未知任務: {task_name}"}
-    
-    state = load_state()
-    success, output = execute_task(task_map[task_name], state)
-    
-    ts_state = get_task_state(state, task_name)
-    ts_state["last_run"] = now_iso()
-    ts_state["total_runs"] = ts_state.get("total_runs", 0) + 1
-    ts_state["last_result"] = 0 if success else 1
-    save_state(state)
-    
-    return {
-        "status": "completed" if success else "failed",
-        "task": task_name,
-        "output": output[:500],
-    }
-
-
-if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--status":
-            print(json.dumps(status(), indent=2))
-        elif sys.argv[1] == "--run-task" and len(sys.argv) > 2:
-            result = run_task(sys.argv[2])
-            print(json.dumps(result, indent=2))
-        else:
-            print(f"用法: {sys.argv[0]} [--status|--run-task <name>]")
-    else:
-        result = pulse()
-        print(json.dumps(result, indent=2))
+    """強制執行指定 cron job。"""
+    return {"status": "deprecated", "message": "請用 hermes cron run <job_id>"}

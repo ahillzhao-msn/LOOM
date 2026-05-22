@@ -19,16 +19,19 @@ venv/
 .env
 .env.*
 
-# KAFED local runtime data
-data/chroma/
-data/feedback_logs/
-data/event_state.json
-data/classification_labels.jsonl
-data/centroids.pkl
-data/worker_vectors.pkl
-data/roster.yaml
-data/metrics.db
-data/flywheel_buffer.jsonl
+# KAFED runtime data (configurable via KAFED_DATA_DIR)
+data/
+kafed.yaml
+
+# Finder context buffer
+finder_context/
+
+# Exported knowledge packages
+*.kpak
+
+# Logs
+logs/
+*.log
 
 # Sync artifacts
 .hermes/

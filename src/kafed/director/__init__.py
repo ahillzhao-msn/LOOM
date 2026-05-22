@@ -9,6 +9,7 @@ from kafed.director.eval import EvalScore, EvalScorer, F1Scope, F2People, F3Fres
 from kafed.director.decision import DecisionTree, Decision, DecisionContext, DecisionResult, CostLevel, Reversibility
 from kafed.director.strategy import StrategySelector, StrategyConfig, StrategyDecision, Orientation
 from kafed.director.planner import Planner, TaskPlan, SubTask, TaskStatus, ExecutionStrategy
+from kafed.director.pipeline import Pipeline, PipelineStep, PipelineRunner, SOUL_PIPELINES
 from kafed.director.protocol import DispatchOrder, ExecutionReport, KnowledgeDeposit
 
 __all__ = [
@@ -20,6 +21,8 @@ __all__ = [
     "StrategySelector", "StrategyConfig", "StrategyDecision", "Orientation",
     # planner
     "Planner", "TaskPlan", "SubTask", "TaskStatus", "ExecutionStrategy",
+    # pipeline
+    "Pipeline", "PipelineStep", "PipelineRunner", "SOUL_PIPELINES",
     # protocol
     "DispatchOrder", "ExecutionReport", "KnowledgeDeposit",
 ]

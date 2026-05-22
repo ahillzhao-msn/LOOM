@@ -102,11 +102,21 @@ class VectorStore:
     # ── 领域列表 ──────────────────────────────────────────
 
     def list_domains(self) -> list[str]:
-        """返回所有已知域名。"""
-        all_data = self._collection.get(limit=100_000)
-        domains = set()
-        if all_data["metadatas"]:
-            for m in all_data["metadatas"]:
-                if m and "domain" in m:
-                    domains.add(m["domain"])
+        """返回所有已知域名（分頁掃描，避免 SQLite 變量上限）。"""
+        domains: set[str] = set()
+        offset = 0
+        batch = 1000
+        while True:
+            data = self._collection.get(limit=batch, offset=offset)
+            metas = data.get("metadatas") if data else None
+            if not metas:
+                break
+            for m in metas:
+                if m and isinstance(m, dict) and "domain" in m:
+                    domain_val = m["domain"]
+                    if isinstance(domain_val, str):
+                        domains.add(domain_val)
+            if len(metas) < batch:
+                break
+            offset += batch
         return sorted(domains)

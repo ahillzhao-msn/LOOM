@@ -7,10 +7,10 @@ E 層是 KAFED 飛輪的「肌肉」：
 
 from kafed.executor.dag import DagScheduler, Task as DAGTask, TaskState, DAGSummary
 from kafed.executor.dispatcher import Dispatcher, DispatchResult
-from kafed.executor.engine import ExecutorEngine, ExecutionReport
+from kafed.executor.engine import ExecutorEngine, ExecutionReport, FeedbackAction, FeedbackDecision
 
 __all__ = [
     "DagScheduler", "DAGTask", "TaskState", "DAGSummary",
     "Dispatcher", "DispatchResult",
-    "ExecutorEngine", "ExecutionReport",
+    "ExecutorEngine", "ExecutionReport", "FeedbackAction", "FeedbackDecision",
 ]

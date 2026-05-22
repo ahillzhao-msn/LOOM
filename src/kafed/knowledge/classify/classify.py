@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,45 +21,25 @@ from numpy.linalg import norm
 from kafed.config import get_config
 from kafed.knowledge.rag.embedding import get_model
 
-# ── 預設值 ──
-LABELS_FILENAME = "classification_labels.jsonl"
-CENTROIDS_FILENAME = "centroids.json"
-SETTINGS_DEFAULTS: dict[str, float] = {
-    "embedding_only_confidence_threshold": 0.85,
-    "embedding_score_threshold": 0.65,
-    "embedding_margin_threshold": 0.08,
-    "general_boost_threshold": 0.70,
-}
+# ── 路徑工具（文件名統一從 config 獲取）──
 
-# ── 路徑工具 ──
-
-def _data_dir() -> Path:
-    return get_config().data_dir
+def _cfg():
+    return get_config()
 
 def _labels_path() -> Path:
-    return _data_dir() / LABELS_FILENAME
+    return _cfg().data_dir / _cfg().labels_filename
 
 def _centroids_path() -> Path:
-    return _data_dir() / CENTROIDS_FILENAME
+    return _cfg().data_dir / _cfg().centroids_filename
 
 # ── 領域 regex 模式（從 seed_patterns.yaml 載入） ──
 
 def _load_seed_patterns() -> dict[str, Any]:
-    """載入 seed_patterns.yaml，自動偵測 Hermes 默認路徑。"""
+    """載入 seed_patterns.yaml，從 config 路徑。"""
     cfg = get_config()
-    path_str = getattr(cfg, "seed_patterns_path", None)
-
-    # 嘗試 KAFED 配置路徑
-    if path_str:
-        sp_path = Path(path_str)
-        if sp_path.exists():
-            return _load_yaml_patterns(sp_path)
-
-    # fallback: Hermes 默認路徑
-    hermes_default = Path(os.getenv("KAFED_SEED_PATTERNS_PATH", str(Path.home() / ".hermes" / "data" / "seed_patterns.yaml")))
-    if hermes_default.exists():
-        return _load_yaml_patterns(hermes_default)
-
+    sp_path = cfg.seed_patterns_path
+    if sp_path and sp_path.exists():
+        return _load_yaml_patterns(sp_path)
     return {}
 
 
@@ -121,21 +100,21 @@ def _infer_type_regex(text: str) -> str:
 _settings_cache: dict[str, float] | None = None
 
 def _load_settings() -> dict[str, float]:
-    """從 YAML 載入分類設定（embedding 置信門檻等）。"""
+    """從 seed_patterns.yaml 載入分類設定。"""
     global _settings_cache
     if _settings_cache is not None:
         return _settings_cache
 
-    defaults = dict(SETTINGS_DEFAULTS)
+    defaults = {
+        "embedding_only_confidence_threshold": 0.85,
+        "embedding_score_threshold": 0.65,
+        "embedding_margin_threshold": 0.08,
+        "general_boost_threshold": 0.70,
+    }
 
-    # 偵測路徑：KAFED 配置優先，Hermes 默認為 fallback
     cfg = get_config()
-    path_str = getattr(cfg, "seed_patterns_path", None)
-    sp_path = Path(path_str) if path_str else None
-    if not sp_path or not sp_path.exists():
-        sp_path = Path(os.getenv("KAFED_SEED_PATTERNS_PATH", str(Path.home() / ".hermes" / "data" / "seed_patterns.yaml")))
-
-    if sp_path.exists():
+    sp_path = cfg.seed_patterns_path
+    if sp_path and sp_path.exists():
         try:
             import yaml
             with open(sp_path) as f:

@@ -1,0 +1,85 @@
+# KAFED Configuration
+# ====================
+# 複製本文件為 kafed.yaml 並根據你的環境修改。
+# 敏感信息（API Key、Token）請寫入 .env，不要寫在這裡。
+#
+# 搜索順序：
+#   1. $KAFED_CONFIG_FILE 環境變量指定的路徑
+#   2. 當前工作目錄下的 kafed.yaml
+#   3. ~/.kafed/kafed.yaml
+#   4. /etc/kafed/kafed.yaml
+#
+# 所有值均可被環境變量覆蓋，見各字段註釋中的環境變量名。
+
+# ── 基礎路徑 ────────────────────────────────────
+# 所有 KAFED 數據的根目錄（env: KAFED_DATA_DIR）
+# data_dir: ~/.kafed/data
+
+# ── Finder ──────────────────────────────────────
+finder:
+  # 快速路由觸發閾值：在線模型數低於此值時跳過 embedding（env: KAFED_FAST_ROUTE_MAX_WORKERS）
+  fast_route_max_workers: 3
+  # 三維聚合權重（env: KAFED_FINDER_W_CAP / W_CTX / W_STA）
+  w_cap: 0.5
+  w_ctx: 0.3
+  w_sta: 0.2
+  # 語境緩衝區大小（env: KAFED_CONTEXT_BUFFER_SIZE）
+  context_buffer_size: 500
+  # 每條成功歷史的增量（env: KAFED_CONTEXT_BOOST）
+  context_boost: 0.15
+  # 模型池向量文件路徑（env: KAFED_VECTORS_PATH）
+  # vectors_path: ~/.kafed/worker_vectors.pkl
+  # 模型註冊表文件路徑（env: KAFED_ROSTER_PATH）
+  # roster_path: ~/.kafed/roster.yaml
+  # 語境緩衝區目錄（env: KAFED_CONTEXT_DIR）
+  # context_dir: ~/.kafed/finder_context
+
+# ── 嵌入模型 ────────────────────────────────────
+embedding:
+  model: "BAAI/bge-small-en-v1.5"  # env: KAFED_EMBEDDING_MODEL
+  dim: 384                          # env: KAFED_EMBEDDING_DIM
+
+# ── Chroma ──────────────────────────────────────
+chroma:
+  collection: "kafed_knowledge"     # env: KAFED_CHROMA_COLLECTION
+
+# ── 分塊 ────────────────────────────────────────
+chunker:
+  max_chars: 500                    # env: KAFED_CHUNK_MAX_CHARS
+  overlap: 50                       # env: KAFED_CHUNK_OVERLAP
+
+# ── 檢索 ────────────────────────────────────────
+retrieval:
+  top_k: 5                          # env: KAFED_TOP_K_DEFAULT
+
+# ── 飛輪事件 ────────────────────────────────────
+flywheel:
+  e1_thresholds: "10,50,100,200,500,1000"  # env: KAFED_E1_THRESHOLDS
+  e2_drift_min: 0.05                       # env: KAFED_E2_DRIFT_MIN
+  e3_min_entries: 200                      # env: KAFED_E3_MIN_ENTRIES
+  e3_repack_growth: 30.0                   # env: KAFED_E3_REPACK_GROWTH
+  e4_dedup_threshold: 0.95                 # env: KAFED_E4_DEDUP_THRESHOLD
+  e5_stale_days: 90                        # env: KAFED_E5_STALE_DAYS
+
+# ── 分類 ────────────────────────────────────────
+classify:
+  # seed_patterns_path: ~/.kafed/seed_patterns.yaml
+
+# ── 服務 ────────────────────────────────────────
+server:
+  host: "0.0.0.0"                   # env: KAFED_HOST
+  port: 8765                        # env: KAFED_PORT
+
+# ── 雲端模型池（內置默認值，供無 config.yaml 時兜底）────
+# cloud_models:
+#   - name: deepseek-v4-flash
+#     provider: deepseek
+#     is_free: false
+#     cost: 0.00015
+#     tags: [reasoning, coding]
+
+# ── 探活端點 ────────────────────────────────────
+# health_endpoints:
+#   local: http://localhost:8000/health
+#   deepseek: https://api.deepseek.com/v1
+#   openrouter: https://openrouter.ai/api/v1/models

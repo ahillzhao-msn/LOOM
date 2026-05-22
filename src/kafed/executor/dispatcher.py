@@ -82,21 +82,38 @@ class Dispatcher:
     
     @staticmethod
     def execute_dag(tasks: list[Task], max_concurrent: int = 3) -> DAGSummary:
-        """執行 DAG 任務集（同步阻塞）。"""
+        """執行 DAG 任務集（同步阻塞）。
+
+        注意：對於自然語言描述的子任務（非 shell 命令），
+        調度器返回任務信息，由調用者（LLM）實際執行。
+        子任務的 description 若以 'sh:' 開頭則視為 shell 腳本。
+        """
         scheduler = DagScheduler(max_concurrent=max_concurrent)
         scheduler.register_batch(tasks)
-        
+
         import time
         start = time.time()
-        
+
         while not scheduler.is_done():
             ready = scheduler.pop_ready()
             if not ready:
-                break  # 無就緒任務，可能全部阻塞
-            
+                break
+
             for task in ready:
                 scheduler.mark_running(task.id)
-                result = Dispatcher.execute_script(task.description, timeout=60)
+                if task.description.startswith("sh:"):
+                    # 明確的 shell 腳本
+                    result = Dispatcher.execute_script(
+                        task.description[3:].strip(), timeout=60
+                    )
+                else:
+                    # 自然語言描述 → 返回信息供 LLM 處理
+                    result = DispatchResult(
+                        task_id=task.id,
+                        status="success",
+                        output=f"[就緒] {task.description}",
+                    )
+
                 if result.is_success:
                     scheduler.complete(task.id, result.output)
                 else:
@@ -107,22 +124,87 @@ class Dispatcher:
         return summary
     
     @staticmethod
-    def dispatch_plan(tasks: list[tuple[str, str, str]]) -> list[DispatchResult]:
-        """分發任務計劃（無依賴，並行執行）。
-        
-        每個 tuple: (id, description, execution_type)
-        execution_type: script / direct
+    def delegate_to_subagent(
+        goal: str,
+        context: str = "",
+        model_name: str = "",
+        model_provider: str = "",
+        toolsets: list[str] | None = None,
+        task_id: str = "delegate",
+        kafed_root: str | None = None,
+    ) -> DispatchResult:
+        """準備子代理委託參數。
+
+        生成帶 KAFED context 注入的 delegate_task 調用參數。
+        調用者（Agent）根據 result 調用 delegate_task()：
+
+            dr = Dispatcher.delegate_to_subagent(
+                goal="審計 KAFED 代碼",
+                model_name="deepseek-v4-flash",
+                model_provider="deepseek",
+            )
+            if dr.is_success:
+                result = delegate_task(goal=dr.output, model=dr.model)
+
+        KAFED context 會自動注入到 subagent 的 context 中，
+        確保 subagent 可以 import kafed 模塊。
+
+        Args:
+            goal: 子代理任務目標
+            context: 額外背景信息
+            model_name: Finder 選中的模型名（空=用默認）
+            model_provider: Finder 選中的 provider
+            toolsets: 子代理可用的工具集（默認 ['terminal', 'file']）
+            task_id: 任務標識
+            kafed_root: KAFED 項目根目錄（默認自動檢測）
         """
-        results = []
-        for task_id, description, exec_type in tasks:
-            if exec_type == "script":
-                result = Dispatcher.execute_script(description)
-                result.task_id = task_id
-                results.append(result)
-            else:
-                results.append(DispatchResult(
-                    task_id=task_id,
-                    status="success",
-                    output=f"Task '{task_id}' registered for LLM execution",
-                ))
-        return results
+        import time
+        start = time.time()
+        from pathlib import Path
+
+        # 自動檢測 KAFED 根目錄
+        if not kafed_root:
+            candidates = [
+                Path.home() / "KAFED",
+                Path.cwd() / "KAFED",
+                Path(__file__).resolve().parent.parent.parent.parent,
+            ]
+            for c in candidates:
+                if (c / "src" / "kafed" / "config.py").exists():
+                    kafed_root = str(c)
+                    break
+        kafed_root = kafed_root or ""
+
+        # 構建帶 KAFED 上下文的 context
+        kafed_context = f"""KAFED 項目根目錄: {kafed_root}
+使用 Python 導入 KAFED 前需先:
+    import sys
+    sys.path.insert(0, '{kafed_root}/src')
+    from kafed.config import get_config
+
+{context}"""
+
+        if toolsets is None:
+            toolsets = ["terminal", "file"]
+
+        # 產出 delegate_task 參數
+        delegate_params = {
+            "goal": goal,
+            "context": kafed_context,
+            "toolsets": toolsets,
+            "task_id": task_id,
+        }
+        if model_name:
+            delegate_params["model"] = {
+                "provider": model_provider,
+                "model": model_name,
+            }
+
+        elapsed = (time.time() - start) * 1000
+        import json as _json
+        return DispatchResult(
+            task_id=task_id,
+            status="success",
+            output=_json.dumps(delegate_params, ensure_ascii=False),
+            duration_ms=elapsed,
+        )

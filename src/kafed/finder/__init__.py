@@ -9,10 +9,12 @@ from kafed.finder.router import Router, find_partners, FindPartnersRequest, Find
 from kafed.finder.registry import Registry
 from kafed.finder.explorer import Explorer, scan
 from kafed.finder.matcher import WorkerCandidate
+from kafed.finder.context_space import ContextSpace
 
 __all__ = [
     "Router", "find_partners", "FindPartnersRequest", "FindPartnersResult",
     "Registry",
     "Explorer", "scan",
     "WorkerCandidate",
+    "ContextSpace",
 ]

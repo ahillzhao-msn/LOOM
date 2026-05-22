@@ -8,41 +8,37 @@ KAFED Finder — 模型發現器。
 from __future__ import annotations
 
 import json
-import os
 import pickle
 import subprocess
-from pathlib import Path
 from typing import Any, Optional
 
 import yaml
 
+from kafed.config import get_config
 from kafed.finder.registry import Registry
 from kafed.finder.matcher import WorkerCandidate
 
-HOME = Path.home()
-ROSTER_PATH = Path(os.getenv("KAFED_ROSTER_PATH", str(HOME / ".hermes" / "data" / "roster.yaml")))
-VECTORS_PATH = Path(os.getenv("KAFED_VECTORS_PATH", str(HOME / ".hermes" / "data" / "worker_vectors.pkl")))
-CONFIG_PATH = Path(os.getenv("KAFED_CONFIG_PATH", str(HOME / ".hermes" / "config.yaml")))
-
 
 class Explorer:
-    """模型發現器。
-    
-    掃描所有模型配置源，生成完整的模型清單和向量空間。
-    """
-    
+    """模型發現器。"""
+
+    def __init__(self):
+        self._cfg = get_config()
+
     @staticmethod
     def scan_all() -> list[WorkerCandidate]:
         """掃描所有來源的模型。"""
+        cfg = get_config()
         workers = []
         seen = set()
-        
+
         # 1. config.yaml
-        if CONFIG_PATH.exists():
+        cp = cfg.config_path
+        if cp.exists():
             try:
-                with open(CONFIG_PATH) as f:
-                    cfg = yaml.safe_load(f)
-                models = cfg.get("models", []) if isinstance(cfg, dict) else []
+                with open(cp) as f:
+                    cfg_yaml = yaml.safe_load(f)
+                models = cfg_yaml.get("models", []) if isinstance(cfg_yaml, dict) else []
                 for m in models:
                     name = m.get("name", m.get("model", ""))
                     if name and name not in seen:
@@ -56,11 +52,12 @@ class Explorer:
                         seen.add(name)
             except Exception:
                 pass
-        
+
         # 2. roster.yaml
-        if ROSTER_PATH.exists():
+        rp = cfg.roster_path
+        if rp.exists():
             try:
-                with open(ROSTER_PATH) as f:
+                with open(rp) as f:
                     data = yaml.safe_load(f) or {}
                 roster_workers = data.get("workers", []) if isinstance(data, dict) else []
                 for w in roster_workers:
@@ -80,7 +77,7 @@ class Explorer:
                         seen.add(name)
             except Exception:
                 pass
-        
+
         # 3. llama-server 實時槽位
         try:
             result = subprocess.run(
@@ -103,23 +100,34 @@ class Explorer:
                         seen.add(name)
         except Exception:
             pass
-        
+
         return workers
     
     @staticmethod
     def update_vector_space(workers: list[WorkerCandidate]) -> None:
-        """更新模型向量空間（佔位符——實際 embedding 需要 KAFED）。"""
-        # 此處生成簡單的 mock 向量供後續匹配使用
+        """使用 KAFED embedding 模型生成每个 worker 的多维能力向量。
+
+        描述文本包含：模型名、提供商、領域、能力標籤、成本類型。
+        這樣同類能力的模型（推理/編碼/視覺）在向量空間中自然聚類。
+        """
         import numpy as np
+        from kafed.knowledge.rag.embedding import get_model
+        model = get_model()
         vectors = {}
-        for i, w in enumerate(workers):
-            # 簡單的基於 hash 的偽向量（實際應使用 embedding 模型）
-            seed = hash(w.name + w.provider + w.domain) % 10000
-            rng = np.random.RandomState(seed)
-            vectors[w.name] = rng.randn(384).astype(np.float32)
+        for w in workers:
+            caps = ", ".join(w.capability_tags) if w.capability_tags else "general"
+            cost_type = "free" if w.is_free else "paid"
+            desc = (
+                f"model: {w.name} | provider: {w.provider} | "
+                f"domain: {w.domain} | capabilities: {caps} | "
+                f"cost: {cost_type}"
+            )
+            vec = model.encode([desc[:512]], show_progress_bar=False)[0]
+            vectors[w.name] = np.array(vec, dtype=np.float32)
         
-        VECTORS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(VECTORS_PATH, "wb") as f:
+        vp = get_config().vectors_path
+        vp.parent.mkdir(parents=True, exist_ok=True)
+        with open(vp, "wb") as f:
             pickle.dump(vectors, f)
     
     @staticmethod
@@ -138,16 +146,20 @@ class Explorer:
 
 def scan(update_roster: bool = False) -> list[WorkerCandidate]:
     """探索所有可用模型。"""
+    from kafed.client.flow import chain
     workers = Explorer.scan_all()
-    print(f"Found {len(workers)} workers")
-    for w in workers[:10]:
+    chain("find/scan", [
+        ("src", f"config+roster+llama", ""),
+        ("hit", f"{len(workers)} workers", ""),
+    ], end=f"update={update_roster}")
+    for w in workers[:5]:
         print(f"  {w.describe()}")
-    if len(workers) > 10:
-        print(f"  ... and {len(workers) - 10} more")
-    
+    if len(workers) > 5:
+        print(f"  ... and {len(workers) - 5} more")
+
     if update_roster and workers:
         Explorer.sync_roster(workers)
         Explorer.update_vector_space(workers)
         print(f"Roster updated with {len(workers)} workers")
-    
+
     return workers
