@@ -336,27 +336,74 @@ def absorb(results: list[TaskResult], source: str = "",
            memory_keys: Optional[list[str]] = None,
            skill_names: Optional[list[str]] = None,
            rag_domain: str = "") -> AbsorptionReport:
-    """執行結果 → Analyzer 判斷 + KM 存儲。
+    """執行結果 → Analyzer 實際寫入 KM。
 
-    args:
+    與之前不同：此函數不再只是生成建議。
+    當 rag_domain 指定時，**實際將 completed 任務內容寫入 KAFED 向量庫**。
+
+    Args:
         results: execute() 的輸出
-        source: 來源標識（用於 memory/skill 記錄）
-        memory_keys: 要存入 memory 的洞察列表
-        skill_names: 要更新/創建的 skill 列表
-        rag_domain: 要存入 RAG 的域（空=不存）
+        source: 來源標識
+        memory_keys: 要存入 memory 的洞察列表（建議，由 Agent 執行）
+        skill_names: 要更新/創建的 skill 列表（建議，由 Agent 執行）
+        rag_domain: 要存入 KAFED 向量庫的域（空=不存）。非空=實際寫入
 
-    注意：實際的 memory/skill/RAG 寫入由調用者（Agent）
-    通過對應的工具完成。此函數只生成存儲建議。
+    Returns:
+        AbsorptionReport — 含實際寫入的統計
     """
     completed = [r for r in results if r.status == "completed"]
     failed = [r for r in results if r.status == "failed"]
     skipped = [r for r in results if r.status == "skipped"]
 
+    rag_entries = 0
+    # 如果指定了 rag_domain，將 completed 任務內容實際寫入 KAFED
+    if rag_domain and completed:
+        try:
+            from kafed.knowledge.rag.vector_store import VectorStore
+            from kafed.knowledge.rag.chunker import chunk_document
+            from kafed.knowledge.flywheel.event_checker import EventChecker
+
+            vs = VectorStore()
+            ec = EventChecker(vs, None)  # RAGEngine not needed for after_ingest
+
+            for r in completed:
+                if r.output and len(r.output) > 20:
+                    # 分塊（如果內容較長）
+                    chunks = chunk_document(r.output)
+                    if not chunks:
+                        chunks = [r.output]
+
+                    texts = []
+                    metadatas = []
+                    ids = []
+                    for j, chunk in enumerate(chunks):
+                        texts.append(chunk)
+                        metadatas.append({
+                            "domain": rag_domain,
+                            "source": source or "absorb",
+                            "task_id": r.task_id,
+                            "description": r.description[:100],
+                        })
+                        ids.append(f"{rag_domain}_absorb_{r.task_id}_{j}")
+
+                    vs.add(texts, metadatas=metadatas, ids=ids)
+                    rag_entries += len(texts)
+
+                    # 觸發 E1 事件檢查（里程碑）
+                    ec.after_ingest(rag_domain, vs.count_by_domain(rag_domain))
+
+        except Exception as e:
+            import logging
+            logging.getLogger("kafed.orchestrator").warning(
+                "absorb RAG 寫入失敗: %s", e
+            )
+
     report = AbsorptionReport(
         memory_items=memory_keys or [],
         skill_updates=skill_names or [],
-        rag_entries=len(completed) if rag_domain else 0,
-        summary=f"  {len(completed)} 完成, {len(failed)} 失敗, {len(skipped)} 跳過",
+        rag_entries=rag_entries,
+        summary=f"  {len(completed)} 完成, {len(failed)} 失敗, "
+                f"{len(skipped)} 跳過, RAG寫入 {rag_entries} 條",
     )
 
     # 失敗任務 → backlog 建議
@@ -364,6 +411,85 @@ def absorb(results: list[TaskResult], source: str = "",
         report.backlog_items.append(f"{r.task_id}: {r.description} (失敗: {r.error})")
 
     return report
+
+
+def solidify(insight: str, target: str = "memory", domain: str = "GENERAL",
+             title: str = "") -> dict:
+    """將一條洞察固話到指定的存儲目標。
+
+    這是 D固 步驟的實際執行函數。
+    一次調用寫入一個目標，避免 Agent 跳過 KAFED 知識管道的問題。
+
+    Args:
+        insight: 洞察內容
+        target: "memory" → Hermes memory
+                "kafed" → KAFED 向量庫
+                "backlog" → backlog 待辦
+                "event" → 觸發飛輪事件檢查
+        domain: 域名（用於 kafed/event 目標）
+        title: 可選標題（用於 backlog/memory）
+
+    Returns:
+        {"status": str, "target": str, "detail": str}
+    """
+    result = {"target": target, "status": "ok", "detail": ""}
+
+    if target == "memory":
+        # 建議 Agent 調用 memory() 工具
+        result["detail"] = f"建議寫入 memory: {insight[:80]}..."
+        result["agent_action"] = "memory"
+
+    elif target == "kafed":
+        try:
+            from kafed.knowledge.rag.vector_store import VectorStore
+            from kafed.knowledge.rag.chunker import chunk_document
+            from kafed.knowledge.flywheel.event_checker import EventChecker
+
+            vs = VectorStore()
+            chunks = chunk_document(insight) or [insight]
+
+            texts = []
+            metadatas = []
+            ids = []
+            for j, chunk in enumerate(chunks):
+                texts.append(chunk)
+                metadatas.append({"domain": domain, "source": "solidify"})
+                ids.append(f"{domain}_solidify_{j}")
+
+            vs.add(texts, metadatas=metadatas, ids=ids)
+
+            ec = EventChecker(vs, None)
+            ec.after_ingest(domain, vs.count_by_domain(domain))
+
+            result["detail"] = f"已寫入 KAFED {domain}: {len(chunks)} 條"
+        except Exception as e:
+            result["status"] = "error"
+            result["detail"] = str(e)
+
+    elif target == "backlog":
+        try:
+            from kafed.orchestrator import backlog_push
+            backlog_push(title or "洞察", value=0.5, effort=insight[:80])
+            result["detail"] = f"已推入 backlog: {insight[:60]}..."
+        except Exception as e:
+            result["status"] = "error"
+            result["detail"] = str(e)
+
+    elif target == "event":
+        try:
+            from kafed.knowledge.rag.vector_store import VectorStore
+            from kafed.knowledge.flywheel.event_checker import EventChecker
+
+            vs = VectorStore()
+            ec = EventChecker(vs, None)
+            count = vs.count_by_domain(domain)
+            events = ec.after_ingest(domain, count)
+            result["detail"] = f"E1-E5 檢查 {domain}: {len(events)} 事件"
+        except Exception as e:
+            result["status"] = "error"
+            result["detail"] = str(e)
+
+    return result
 
 
 # ══════════════════════════════════════════════════
