@@ -384,7 +384,9 @@ def absorb(results: list[TaskResult], source: str = "",
                             "task_id": r.task_id,
                             "description": r.description[:100],
                         })
-                        ids.append(f"{rag_domain}_absorb_{r.task_id}_{j}")
+                        import hashlib
+                        _uid = hashlib.md5(str(chunk).encode()).hexdigest()[:12]
+                        ids.append(f"{rag_domain}_absorb_{r.task_id}_{_uid}")
 
                     vs.add(texts, metadatas=metadatas, ids=ids)
                     rag_entries += len(texts)
@@ -454,7 +456,9 @@ def solidify(insight: str, target: str = "memory", domain: str = "GENERAL",
             for j, chunk in enumerate(chunks):
                 texts.append(chunk)
                 metadatas.append({"domain": domain, "source": "solidify"})
-                ids.append(f"{domain}_solidify_{j}")
+                import hashlib
+                _uid = hashlib.md5(chunk.encode()).hexdigest()[:12]
+                ids.append(f"{domain}_solidify_{_uid}")
 
             vs.add(texts, metadatas=metadatas, ids=ids)
 
