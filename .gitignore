@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+
+# KAFED local runtime data
+data/chroma/
+data/feedback_logs/
+data/event_state.json
+data/classification_labels.jsonl
+data/centroids.pkl
+data/worker_vectors.pkl
+data/roster.yaml
+data/metrics.db
+data/flywheel_buffer.jsonl
+
+# Sync artifacts
+.hermes/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Tests / temp
+test-output/
+tmp/
+
+# Jupyter
+.ipynb_checkpoints/

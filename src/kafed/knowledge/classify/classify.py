@@ -1,0 +1,318 @@
+"""
+classify.py — Embedding-based domain classification for KAFED.
+
+取代 discern-engine 中的獨立分類邏輯，統一使用 KAFED 的 embedding 模型與 centroid 數據。
+雙路徑置信邏輯：共識路徑 (embedding + regex 一致) + 高置信路徑 (embedding 獨強)。
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+from numpy import dot
+from numpy.linalg import norm
+
+from kafed.config import get_config
+from kafed.knowledge.rag.embedding import get_model
+
+# ── 預設值 ──
+LABELS_FILENAME = "classification_labels.jsonl"
+CENTROIDS_FILENAME = "centroids.json"
+SETTINGS_DEFAULTS: dict[str, float] = {
+    "embedding_only_confidence_threshold": 0.85,
+    "embedding_score_threshold": 0.65,
+    "embedding_margin_threshold": 0.08,
+    "general_boost_threshold": 0.70,
+}
+
+# ── 路徑工具 ──
+
+def _data_dir() -> Path:
+    return get_config().data_dir
+
+def _labels_path() -> Path:
+    return _data_dir() / LABELS_FILENAME
+
+def _centroids_path() -> Path:
+    return _data_dir() / CENTROIDS_FILENAME
+
+# ── 領域 regex 模式（從 seed_patterns.yaml 載入） ──
+
+def _load_seed_patterns() -> dict[str, Any]:
+    """載入 seed_patterns.yaml，自動偵測 Hermes 默認路徑。"""
+    cfg = get_config()
+    path_str = getattr(cfg, "seed_patterns_path", None)
+
+    # 嘗試 KAFED 配置路徑
+    if path_str:
+        sp_path = Path(path_str)
+        if sp_path.exists():
+            return _load_yaml_patterns(sp_path)
+
+    # fallback: Hermes 默認路徑
+    hermes_default = Path(os.getenv("KAFED_SEED_PATTERNS_PATH", str(Path.home() / ".hermes" / "data" / "seed_patterns.yaml")))
+    if hermes_default.exists():
+        return _load_yaml_patterns(hermes_default)
+
+    return {}
+
+
+def _load_yaml_patterns(path: Path) -> dict[str, Any]:
+    """從 YAML 文件載入領域 regex 模式。"""
+    try:
+        import yaml
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        return data.get("domains", {}) if data else {}
+    except Exception:
+        return {}
+
+def _infer_domain_regex(text: str) -> str:
+    """從文本推斷領域（regex fallback，從 seed_patterns.yaml 載入）。"""
+    patterns = _load_seed_patterns()
+    for domain, info in patterns.items():
+        if any(re.search(p, text, re.I) for p in info.get("patterns", [])):
+            return domain
+    return "GENERAL"
+
+def _infer_level_regex(text: str) -> str:
+    """知識層級（regex fallback）。"""
+    if re.search(r'\b(?:IW\d{2}|IP\d{2}|CU\d{2}|Z[A-Z0-9]{4,}|PM\d{3})\b', text):
+        return "L4"
+    if re.search(r'\b(?:transaction|t\.code|TCD|tcode)\s+', text, re.I):
+        return "L4"
+    if re.search(r'(?:如何|步驟|step|how\s+to|流程|workflow|pipeline|序列|順序|配置)', text, re.I):
+        return "L3"
+    if re.search(r'(?:首先|然後|接著|finally|最後|第一步|第二步|step\s+\d)', text, re.I):
+        return "L3"
+    if re.search(r'(?:區別|difference|vs|versus|關係|relationship|between|結構|architecture|pattern|模式)', text, re.I):
+        return "L2"
+    if re.search(r'(?:概念|concept|overview|概述|什麼是|是什麼|what\s+is|定義|definition|設計)', text, re.I):
+        return "L2"
+    return "L1"
+
+def _infer_type_regex(text: str) -> str:
+    """知識類型（regex fallback）。"""
+    if re.search(r'(?:不要|避免|注意|小心|陷阱|教訓|pitfall|warning)', text, re.I):
+        return "EXPERIENTIAL"
+    if re.search(r'(?:實踐中|經驗|l(?:earn|esson).*(?:found|lesson))', text, re.I):
+        return "EXPERIENTIAL"
+    if re.search(r'(?:因為|所以|因此|導致|原因|原理|why|because|therefore)', text, re.I):
+        return "REASONING"
+    if re.search(r'(?:區別|difference|vs|versus|關係|關聯|correlation|depends)', text, re.I):
+        return "REASONING"
+    if re.search(r'(?:設計模式|權衡|trade.?off|設計決策|decision)', text, re.I):
+        return "REASONING"
+    if re.search(r'(?:step|步驟|流程|how\s+to|操作|執行|調用|配置|輸入|點擊)', text, re.I):
+        return "PROCEDURAL"
+    if re.search(r'(?:先|然後|接著|最後|首先|其次|第一步|第二步)', text, re.I):
+        return "PROCEDURAL"
+    return "DECLARATIVE"
+
+# ── 設定載入 ──
+
+_settings_cache: dict[str, float] | None = None
+
+def _load_settings() -> dict[str, float]:
+    """從 YAML 載入分類設定（embedding 置信門檻等）。"""
+    global _settings_cache
+    if _settings_cache is not None:
+        return _settings_cache
+
+    defaults = dict(SETTINGS_DEFAULTS)
+
+    # 偵測路徑：KAFED 配置優先，Hermes 默認為 fallback
+    cfg = get_config()
+    path_str = getattr(cfg, "seed_patterns_path", None)
+    sp_path = Path(path_str) if path_str else None
+    if not sp_path or not sp_path.exists():
+        sp_path = Path(os.getenv("KAFED_SEED_PATTERNS_PATH", str(Path.home() / ".hermes" / "data" / "seed_patterns.yaml")))
+
+    if sp_path.exists():
+        try:
+            import yaml
+            with open(sp_path) as f:
+                data = yaml.safe_load(f)
+            if data and "settings" in data:
+                _settings_cache = {**defaults, **data["settings"]}
+                return _settings_cache
+        except Exception:
+            pass
+
+    _settings_cache = defaults
+    return defaults
+
+# ── Centroid 管理 ──
+
+def load_centroids() -> dict[str, dict]:
+    """載入 KAFED centroids.json。"""
+    cp = _centroids_path()
+    if cp.exists():
+        with open(cp) as f:
+            data = json.load(f)
+        # 過濾出含 centroid 向量的條目
+        return {k: v for k, v in data.items() if "centroid" in v}
+    return {}
+
+def build_centroids_from_labels() -> dict[str, dict]:
+    """從 labels 計算 centroids，不寫檔。供 rebuild_centroids() 調用補充。"""
+    model = get_model()
+    labels = load_labels()
+    if not labels:
+        return {}
+
+    groups: dict[str, list[str]] = {}
+    for lb in labels:
+        d = lb.get("domain", "GENERAL") or "GENERAL"
+        if d not in groups:
+            groups[d] = []
+        groups[d].append(lb.get("text", "")[:512])
+
+    centroids: dict[str, dict] = {}
+    for domain, texts in groups.items():
+        if not texts:
+            continue
+        embeddings = model.encode(texts, show_progress_bar=False)
+        centroid_vec = embeddings.mean(axis=0)
+        centroids[domain] = {
+            "centroid": centroid_vec.tolist(),
+            "count": len(texts),
+        }
+    return centroids
+
+def build_centroids() -> dict[str, dict]:
+    """從 classification_labels 重建 centroids，寫入 centroids.json。"""
+    centroids = build_centroids_from_labels()
+
+    # 寫入 KAFED centroids.json
+    cp = _centroids_path()
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    with open(cp, "w") as f:
+        json.dump(centroids, f, ensure_ascii=False, indent=2)
+
+    return centroids
+
+# ── 標籤管理 ──
+
+def load_labels() -> list[dict]:
+    """載入 classification_labels.jsonl。"""
+    lp = _labels_path()
+    labels = []
+    if lp.exists():
+        with open(lp) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        labels.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+    return labels
+
+def record_classification(text: str, result: dict) -> dict:
+    """記錄分類結果到 labels 文件。"""
+    entry = {
+        "id": hashlib.md5(text.encode()).hexdigest()[:12],
+        "text": text[:512],
+        "domain": result.get("domain", "GENERAL"),
+        "level": result.get("level", "L2"),
+        "type": result.get("type", "DECLARATIVE"),
+        "method": result.get("method", "regex_fallback"),
+        "confidence": result.get("confidence", 0.0),
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+    }
+    lp = _labels_path()
+    lp.parent.mkdir(parents=True, exist_ok=True)
+    with open(lp, "a") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entry
+
+# ── 核心分類介面 ──
+
+def classify(text: str) -> dict:
+    """
+    統一分類介面。
+
+    使用 embedding 找最近 centroid，regex 作 fallback。
+    雙路徑：
+      Path A (共識): embedding 與 regex 一致，cosine > 0.50
+      Path B (高置信): embedding 獨強，score > 0.65, conf > 0.85, margin > 0.08
+
+    Returns:
+        {"domain": str, "level": str, "type": str,
+         "method": "embedding"|"regex_fallback", "confidence": float}
+    """
+    centroids = load_centroids()
+    best_score = -1.0
+
+    if centroids:
+        model = get_model()
+        vec = model.encode([text[:512]], show_progress_bar=False)[0]
+
+        best_score = -1.0
+        second_score = -1.0
+        best_domain = "GENERAL"
+
+        for domain, info in centroids.items():
+            cv = info["centroid"]
+            score = float(dot(vec, cv) / (norm(vec) * norm(cv)))
+            if score > best_score:
+                second_score = best_score
+                best_score = score
+                best_domain = domain
+            elif score > second_score:
+                second_score = score
+
+        confidence = float(max(0, min(1, (best_score + 1) / 2)))
+        margin = best_score - second_score if second_score > -1 else 1.0
+
+        settings = _load_settings()
+        regex_domain = _infer_domain_regex(text)
+
+        # Path A: 共識路徑
+        consensus = best_domain == regex_domain
+        consensus_threshold = 0.50
+
+        # Path B: 高置信路徑
+        high_conf_threshold = settings.get("embedding_score_threshold", 0.65)
+        high_margin = settings.get("embedding_margin_threshold", 0.08)
+        high_conf_only = settings.get("embedding_only_confidence_threshold", 0.85)
+
+        use_embedding = False
+        if consensus and best_score > consensus_threshold:
+            use_embedding = True
+        elif (best_score > high_conf_threshold and
+              confidence > high_conf_only and
+              margin > high_margin):
+            use_embedding = True
+
+        if use_embedding:
+            result = {
+                "domain": best_domain,
+                "level": _infer_level_regex(text),
+                "type": _infer_type_regex(text),
+                "method": "embedding",
+                "confidence": round(confidence, 4),
+            }
+            record_classification(text, result)
+            return result
+
+    # Fallback: regex
+    domain = _infer_domain_regex(text)
+    fallback_conf = best_score if best_score > 0.3 else 0.0
+    result = {
+        "domain": domain,
+        "level": _infer_level_regex(text),
+        "type": _infer_type_regex(text),
+        "method": "regex_fallback",
+        "confidence": round(fallback_conf, 4),
+    }
+    record_classification(text, result)
+    return result
