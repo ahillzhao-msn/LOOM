@@ -3,7 +3,6 @@ services:
   kafed:
     build:
       context: .
-      dockerfile: server/Dockerfile
     container_name: kafed
     ports:
       - "8765:8765"

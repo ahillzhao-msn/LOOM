@@ -4,6 +4,10 @@ KAFED Orchestrator — 五層編排器。
 將 D→F→E→A→K→Backlog 接成有機整體。
 供 SOUL Pipeline 各步驟調用。
 
+更新（2026-05-23 v2.0）：
+  - session_end_audit() — 固完成後觸發 Analyzer 稽查
+  - KM ContextProvider 引用 — 知識召回步驟使用
+
 Usage:
     from kafed.orchestrator import plan, execute, absorb, backlog_check, backlog_push
 
@@ -611,6 +615,66 @@ def session_end(unfinished: list[dict] = None):
         print(f"  → {len(unfinished)} 未完成推回 backlog")
     if backlog_check():
         print(f"  backlog 待辦: {len(backlog_check())} 項")
+
+
+def session_end_audit(director_intent: str = "", hexagram_id: int = 0,
+                      pipeline_taken: str = "", steps: list | None = None,
+                      task_results: list | None = None,
+                      solidified: list | None = None,
+                      outcome_quality: float = 0.5) -> dict:
+    """固完成後觸發 Analyzer 稽查（非同步，不阻塞）。
+
+    Analyzer 有 KM 執行權限：
+      - 提升高質量固化內容到 Wiki
+      - 修正嵌入向量
+      - 檢測重複模式 → 建議 Agent 創建 Skill
+      - 謹慎更新 SOUL（頻率限制 + 衝突檢測）
+
+    Args:
+        director_intent: 初始問題/任務描述
+        hexagram_id: 初始卦象
+        pipeline_taken: 選用的 Pipeline
+        steps: 每步記錄
+        task_results: Executor 任務結果
+        solidified: 固化內容列表
+        outcome_quality: Agent 自評質量 (0.0~1.0)
+
+    Returns:
+        AuditReport dict
+    """
+    from kafed.analyzer.audit import AuditEngine, AuditInput, AuditReport
+
+    inp = AuditInput(
+        director_intent=director_intent,
+        hexagram_id=hexagram_id,
+        pipeline_taken=pipeline_taken,
+        steps=steps or [],
+        task_results=task_results or [],
+        solidified=solidified or [],
+        outcome_quality=outcome_quality,
+    )
+
+    engine = AuditEngine()
+    report = engine.audit(inp)
+
+    # 輸出摘要
+    quality_label = ("優" if report.quality_score > 0.8
+                     else "良" if report.quality_score > 0.5
+                     else "需改進")
+    print(f"  [Analyzer] 稽查評分: {quality_label} ({report.quality_score:.2f})")
+    if report.pattern_detected:
+        print(f"  [Analyzer] 模式: {report.pattern_detected}")
+    for a in report.actions:
+        print(f"  [Analyzer] → [{a.action}] {a.target}: {a.reason}")
+
+    return {
+        "quality_score": report.quality_score,
+        "pattern_detected": report.pattern_detected,
+        "actions": [{"action": a.action, "target": a.target,
+                      "confidence": a.confidence, "reason": a.reason}
+                     for a in report.actions],
+        "summary": report.summary,
+    }
 
 
 # ══════════════════════════════════════════════════

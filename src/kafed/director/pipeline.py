@@ -33,7 +33,7 @@ class PipelineStep:
     """
     step_id: str             # 短碼：卦、評、界、決 ...
     name: str                # 人類可讀：YiCeNet卦象預判、EVAL評估 ...
-    optional: bool = False   # True → 此步可跳過（如 KAFED 查詢）
+    optional: bool = False   # True → 此步可跳過
     depends_on: list[str] = field(default_factory=list)  # 前置步驟 ID
 
 
@@ -70,6 +70,14 @@ class Pipeline:
 
 
 # ── 默認 Pipeline ────────────────────────────
+#
+# 步序（v2.0 更新）：
+#   問 → 卦 → 召(強制,KM知識召回) → 評(帶文脈) → 界 → 決 → 編? → 應 → 固
+#
+# 「查」已被「召」吸收——知識召回是強制的、在評之前的、跨全源的
+#（RAG + Wiki 嵌入命中，Memory/Sessions/Skills 只讀掃描）。
+# EVAL 不再從零開始——帶著知識上下文做評估。
+
 
 SOUL_CORE = Pipeline(
     id="soul_core",
@@ -77,14 +85,17 @@ SOUL_CORE = Pipeline(
     steps=[
         PipelineStep("問", "5W1H 分解"),
         PipelineStep("卦", "YiCeNet 卦象預判"),
-        PipelineStep("評", "EVAL 五維評估"),
-        PipelineStep("界", "Scope 檢查"),
-        PipelineStep("查", "KAFED 查詢 — F1≥2且F3≤2必查自動注入",
+        PipelineStep("召", "KM知識召回 — 嵌入命中, 全源, 強制",
+                     depends_on=["卦"]),
+        PipelineStep("評", "EVAL 帶文脈評估 — 五維, 已被卦象+知識調製",
+                     depends_on=["召"]),
+        PipelineStep("界", "Scope 檢查 — 估範圍, 控聯想, 帶問題學",
                      depends_on=["評"]),
-        PipelineStep("決", "自決決策樹", depends_on=["查"]),
+        PipelineStep("決", "自決決策樹 — 成本/可逆/先例/目標+知識",
+                     depends_on=["界"]),
         PipelineStep("編", "任務編排", optional=True, depends_on=["決"]),
         PipelineStep("應", "生成回應"),
-        PipelineStep("固", "固化 — 洞察萃取記憶壓縮知識分流",
+        PipelineStep("固", "固化 — 洞察萃取·知識分流·啟動稽查",
                      depends_on=["應"]),
     ],
 )
@@ -95,8 +106,9 @@ SOUL_QUICK = Pipeline(
     steps=[
         PipelineStep("問", "5W1H 分解"),
         PipelineStep("卦", "YiCeNet 卦象預判"),
-        PipelineStep("評", "EVAL 快速評估"),
-        PipelineStep("查", "KAFED 查詢", depends_on=["評"]),
+        PipelineStep("召", "KM知識召回（輕量）",
+                     depends_on=["卦"]),
+        PipelineStep("評", "EVAL 快速評估", depends_on=["召"]),
         PipelineStep("應", "生成回應"),
         PipelineStep("固", "固化", depends_on=["應"]),
     ],
@@ -108,10 +120,11 @@ SOUL_DEEP = Pipeline(
     steps=[
         PipelineStep("問", "5W1H 分解"),
         PipelineStep("卦", "YiCeNet 卦象預判"),
-        PipelineStep("評", "EVAL 五維評估"),
-        PipelineStep("界", "Scope 檢查"),
-        PipelineStep("查", "KAFED 查詢", depends_on=["評"]),
-        PipelineStep("決", "自決決策樹", depends_on=["查"]),
+        PipelineStep("召", "KM深度知識召回",
+                     depends_on=["卦"]),
+        PipelineStep("評", "EVAL 五維評估", depends_on=["召"]),
+        PipelineStep("界", "Scope 檢查", depends_on=["評"]),
+        PipelineStep("決", "自決決策樹", depends_on=["界"]),
         PipelineStep("編", "任務編排", depends_on=["決"]),
         PipelineStep("應", "生成回應"),
         PipelineStep("固", "固化深度壓縮", depends_on=["應"]),

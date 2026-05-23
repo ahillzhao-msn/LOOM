@@ -76,7 +76,7 @@ KAFED 的根基是三道三层：
 | **D** Director | EVAL 评估、决策树、策略选择、Pipeline 编排 | `director/eval.py`, `decision.py`, `strategy.py`, `planner.py`, `pipeline.py` |
 | **F** Finder | 模型注册表、三维聚合路由、语境内嵌空间 | `finder/registry.py`, `router.py`, `explorer.py`, `context_space.py` |
 | **E** Executor | DAG 任务排程、调度分发、**监督反馈环** | `executor/dag.py`, `dispatcher.py`, `engine.py` |
-| **A** Analyzer | 脉动调度、模式发现、任务注册表持久化 | `analyzer/pulse.py`, `config.py` |
+| **A** Analyzer | 脉动调度、任务稽查引擎、KB 离线稽核、模式检测 | `analyzer/{pulse,audit,kb_audit}.py` |
 | **K** Knowledge | 向量知识库、RAG、centroid 域分类、飞轮事件 E1-E5 | `knowledge/rag/`, `classify/`, `flywheel/`, `quality/` |
 
 ### 关键机制：监督反馈环
@@ -241,10 +241,12 @@ logger.info("任务完成", extra={"task_id": "audit_001"})
 │   ├── director/           — 战略决策层 (7 模块)
 │   ├── finder/             — 模型发现层 (5 模块)
 │   ├── executor/           — DAG 执行层 (4 模块 + 监督反馈环)
-│   ├── analyzer/           — 分析脉动层 (含持久化任务注册表)
+│   ├── analyzer/           — 分析脉动层 (pulse + audit + kb_audit)
 │   ├── knowledge/          — 知识 RAG 层 (12 模块)
 │   ├── kpak/               — 知识包导出/导入
 │   └── client/             — CLI + FlowVisualizer
+├── templates/               — SOUL 认知架构模板
+├── archive/                 — 历史文档归档
 ├── scripts/                — 工具脚本
 ├── setup.sh                — 一键安装
 ├── kafed.yaml.example      — 配置模板

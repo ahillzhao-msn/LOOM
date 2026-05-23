@@ -40,10 +40,6 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Logs
-logs/
-*.log
-
 # Tests / temp
 test-output/
 tmp/
