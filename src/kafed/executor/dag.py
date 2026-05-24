@@ -2,7 +2,7 @@
 KAFED Executor — DAG 調度器。
 
 子任務依賴追蹤、就緒管理、阻塞傳播。
-吸收 orchestrator/scripts/dag_scheduler.py + dag_workflow.py 的核心邏輯。
+吸收 pipeline/scripts/dag_scheduler.py + dag_workflow.py 的核心邏輯。
 """
 
 from __future__ import annotations

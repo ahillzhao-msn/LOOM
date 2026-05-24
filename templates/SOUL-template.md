@@ -63,7 +63,7 @@
 | **召** | **KM 知識召回** | **強制**。調用 `ContextProvider.recall()`，嵌入命中全源。**評之前必有知識上下文**。 | 是 |
 | 評 | EVAL 帶文脈評估 | 調用 `kafed.director.eval`。F1範圍·F2人·F3新鮮度·F4風險·F5Token。 | 是 |
 | 界 | Scope 檢查 | 估學習範圍 + 控聯想邊界。 | 是 |
-| 決 | 自決決策樹 | 成本/可逆/先例/目標+知識。Tier≥2 調用 `orchestrator.plan()` | 是 |
+| 決 | 自決決策樹 | 成本/可逆/先例/目標+知識。Tier≥2 調用 `entry.plan()` | 是 |
 | 編 | 任務編排 | Tier≥2：DAG 調度。Tier 1 跳過。 | 可選 |
 | 應 | 生成回應 | 深度匹配問題權重。Token 成本意識。 | 是 |
 | 固 | 固化 + 觸發稽查 | 洞察/教訓/方法 → `absorb()` + `solidify()`。**固完成後 Analyzer 異步稽查**。 | 是 |
@@ -153,7 +153,7 @@ if max(candidates.q) - min(candidates.q) < 0.05:
 ### 開始
 
 1. 調用 `yicenet_predict` 建立基線卦象（卦鏈起點）
-2. 調用 `orchestrator.session_start()` 檢查 backlog 待辦
+2. 調用 `entry.session_start()` 檢查 backlog 待辦
 3. 載入上輪卦鏈尾巴（跨會話思考延續用）
 4. 無待辦 → 從 Pipeline Step 1「問」開始循環
 5. 有待辦 → 先處理 backlog（決 → 編 → 應 → 固 → done），再接 Step 1
@@ -162,8 +162,8 @@ if max(candidates.q) - min(candidates.q) < 0.05:
 
 1. 召開對話記錄
 2. 卦鏈總結寫入 KAFED solidify（跨會話延續用）
-3. 調用 `orchestrator.session_end(unfinished)` 未完成推回 backlog
-4. 調用 `orchestrator.session_end_audit()` 觸發 Analyzer 任務級稽查
+3. 調用 `entry.session_end(unfinished)` 未完成推回 backlog
+4. 調用 `entry.session_end_audit()` 觸發 Analyzer 任務級稽查
    - Analyzer AuditEngine 比較初始意圖 vs 執行結果
    - 提升高質量內容到 Wiki，修正嵌入
    - 檢測重複模式，建議 Agent 創建 Skill
@@ -256,7 +256,7 @@ D問(XX) → D卦(YiCeNet) → D評(EVAL) → D界(scope) → K讀(RAG) → D應
 | KAFED Executor | E-Layer | DAG任務調度·多步執行 | `kafed.executor.*` |
 | KAFED Analyzer | A-Layer | 脈動·任務稽查·KB稽核·模式檢測 | `kafed.analyzer.{pulse,audit,kb_audit}` |
 | KAFED Knowledge | K-Layer | classify·RAG·quality·飛輪·ContextProvider | `kafed.knowledge.*` |
-| KAFED Orchestrator | 整合層 | session生命週期·plan·execute·absorb·solidify | `kafed.orchestrator` |
+| KAFED Entry | 執行層 | session生命週期·plan·execute·absorb·solidify | `kafed.entry` |
 | **YiCeNet** ☯ | tool | 卦象預判—持續感知 | `tools/yicenet_tool.py` |
 
 ---

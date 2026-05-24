@@ -25,8 +25,12 @@ class RAGEngine:
     # ── 检索 ──────────────────────────────────────────────
 
     def query(self, question: str, top_k: int | None = None,
-              domain: str | None = None) -> dict:
+              domain: str | None = None,
+              soft: bool = False,
+              soft_threshold: float = 0.10) -> dict:
         """检索知识片段，返回匹配 chunks + 域 centroid 上下文。
+
+        soft=True 时启用软分类：query 落在域边界时自动扩展搜索范围。
 
         返回:
             {
@@ -36,13 +40,28 @@ class RAGEngine:
                 "total_found": int,
                 "domain_context": {
                     "domain": str | None,
-                    "centroid": [float] | None,   # 域原型向量
-                    "total_entries": int,           # 域内条目数
+                    "centroid": [float] | None,
+                    "total_entries": int,
                 },
+                "soft_expanded": bool,        # 是否因软分类而扩展
+                "soft_candidates": [str],      # 候选域名列表
+                "soft_filter": dict | None,    # 实际使用的 ChromaDB where
             }
         """
         cfg = get_config()
-        where = {"domain": domain} if domain else None
+
+        # 软分类：自动选择搜索域
+        soft_info = {"expanded": False, "candidates": [], "filter": None}
+        if soft and domain is None:
+            from kafed.knowledge.classify.soft_classify import hierarchical_search
+            sr = hierarchical_search(question, threshold=soft_threshold)
+            soft_info["expanded"] = sr.expanded
+            soft_info["candidates"] = [c.entity.name for c in sr.candidates]
+            soft_info["filter"] = sr.search_filter
+            where = sr.search_filter
+        else:
+            where = {"domain": domain} if domain else None
+
         results = self._vs.search(question, top_k=top_k, where=where)
         query_id = str(uuid.uuid4())
 
@@ -67,6 +86,9 @@ class RAGEngine:
             "results": results,
             "total_found": len(results),
             "domain_context": domain_context,
+            "soft_expanded": soft_info["expanded"],
+            "soft_candidates": soft_info["candidates"],
+            "soft_filter": soft_info["filter"],
         }
 
     # ── 反馈 ──────────────────────────────────────────────

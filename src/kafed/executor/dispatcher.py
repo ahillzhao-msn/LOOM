@@ -208,3 +208,25 @@ class Dispatcher:
             output=_json.dumps(delegate_params, ensure_ascii=False),
             duration_ms=elapsed,
         )
+
+    # ── Finder→Executor 橋接 ─────────────────────────
+
+    @staticmethod
+    def dispatch_for(model_name: str = "", model_provider: str = "",
+                     goal: str = "", context: str = "",
+                     task_id: str = "dispatch") -> DispatchResult:
+        """Finder 選中模型 → delegate_task 參數。"""
+        return Dispatcher.delegate_to_subagent(
+            goal=goal, context=context,
+            model_name=model_name, model_provider=model_provider,
+            task_id=task_id,
+        )
+
+    @staticmethod
+    def needs_dispatch(model_name: str, current_model: str = "") -> bool:
+        """當前模型是否即 Finder 選中的？不同則需 dispatch。"""
+        if not model_name:
+            return False  # Finder 未指定，用默認
+        if current_model and model_name == current_model:
+            return False  # 當前模型即 Finder 選中
+        return True

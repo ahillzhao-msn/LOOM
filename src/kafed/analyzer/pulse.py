@@ -263,6 +263,61 @@ def status() -> dict:
         return {"pulse_check": "error", "error": str(e)}
 
 
+# ── Backlog 消費者 ──────────────────────────────
+# 以下函數供 pulse-check.py 或 cron 調用。
+# 當 backlog 有高優先級待辦且 GPU 空閒時，寫 trigger 文件供下次 session 消費。
+
+
+def check_backlog_and_signal(silent: bool = False) -> dict:
+    """檢查 backlog 是否有高優先級待辦。有則寫 trigger 文件。
+
+    Returns:
+        {"status": str, "count": int, "top": str or None, "signaled": bool}
+    """
+    try:
+        import json
+        from pathlib import Path
+        from kafed.entry import backlog_check
+
+        pending = backlog_check()
+        if not pending:
+            return {"status": "empty", "count": 0, "top": None, "signaled": False}
+
+        top = pending[0]
+        ps = top.get("priority_score", 0)
+
+        # 只關心高優待辦 (≥0.6)
+        if ps < 0.6:
+            return {"status": "low_priority", "count": len(pending),
+                    "top": top.get("title", "?"), "signaled": False}
+
+        # 寫 trigger 文件 — 供下次 agent session 消費
+        trigger_dir = Path.home() / ".hermes" / "data"
+        trigger_dir.mkdir(parents=True, exist_ok=True)
+        trigger_path = trigger_dir / "backlog_trigger.json"
+
+        trigger_data = {
+            "triggered_at": __import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc).isoformat(),
+            "item_id": top.get("id"),
+            "title": top.get("title", "?"),
+            "priority_score": ps,
+            "description": top.get("description", ""),
+        }
+        trigger_path.write_text(json.dumps(trigger_data, indent=2, ensure_ascii=False))
+
+        if not silent:
+            print(f"  [backlog] ⏰ 觸發: [{ps:.3f}] {top.get('title', '?')[:60]}")
+
+        return {"status": "signaled", "count": len(pending),
+                "top": top.get("title", "?"), "signaled": True}
+
+    except Exception as e:
+        if not silent:
+            print(f"  [backlog] ⚠️  檢查失敗: {e}")
+        return {"status": "error", "count": 0, "top": None, "signaled": False, "error": str(e)}
+
+
 def run_task(task_name: str) -> dict:
     """強制執行指定 cron job。"""
     return {"status": "deprecated", "message": "請用 hermes cron run <job_id>"}

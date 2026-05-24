@@ -14,12 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-from numpy import dot
-from numpy.linalg import norm
-
 from kafed.config import get_config
 from kafed.knowledge.rag.embedding import get_model
+from kafed.knowledge.classify.domain_registry import DomainRegistry
 
 # ── 路徑工具（文件名統一從 config 獲取）──
 
@@ -49,7 +46,7 @@ def _load_yaml_patterns(path: Path) -> dict[str, Any]:
         import yaml
         with open(path) as f:
             data = yaml.safe_load(f)
-        return data.get("domains", {}) if data else {}
+        return data.get("domains", {}) or {} if data else {}
     except Exception:
         return {}
 
@@ -61,11 +58,56 @@ def _infer_domain_regex(text: str) -> str:
             return domain
     return "GENERAL"
 
+# ── 數據驅動的 Level/Type 分類 ──
+# Pattern data is in seed_patterns.yaml; code fallbacks are domain-agnostic.
+
+_LEVEL_YAML: dict[str, list[str]] | None = None
+_TYPE_YAML: dict[str, list[str]] | None = None
+
+
+def _load_level_type_patterns() -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Load level and type patterns from seed_patterns.yaml."""
+    global _LEVEL_YAML, _TYPE_YAML
+    if _LEVEL_YAML is not None and _TYPE_YAML is not None:
+        return _LEVEL_YAML, _TYPE_YAML
+
+    levels: dict[str, list[str]] = {}
+    types: dict[str, list[str]] = {}
+
+    cfg = get_config()
+    sp_path = cfg.seed_patterns_path
+    if sp_path and sp_path.exists():
+        try:
+            import yaml
+            with open(sp_path) as f:
+                data = yaml.safe_load(f)
+            for entry in data.get("levels", []):
+                levels[entry["name"]] = entry.get("patterns", [])
+            for entry in data.get("types", []):
+                types[entry["name"]] = entry.get("patterns", [])
+        except Exception:
+            pass
+
+    _LEVEL_YAML = levels
+    _TYPE_YAML = types
+    return levels, types
+
+
 def _infer_level_regex(text: str) -> str:
-    """知識層級（regex fallback）。"""
-    if re.search(r'\b(?:IW\d{2}|IP\d{2}|CU\d{2}|Z[A-Z0-9]{4,}|PM\d{3})\b', text):
-        return "L4"
-    if re.search(r'\b(?:transaction|t\.code|TCD|tcode)\s+', text, re.I):
+    """知識層級（regex fallback）。先試 seed_patterns.yaml，再試通用 fallback。"""
+    levels, _ = _load_level_type_patterns()
+    if levels:
+        for lv_name in ("L4", "L3", "L2"):
+            patterns = levels.get(lv_name, [])
+            for pat in patterns:
+                try:
+                    if re.search(pat, text, re.I):
+                        return lv_name
+                except Exception:
+                    continue
+
+    # Generic fallback: domain-agnostic heuristics
+    if re.search(r'\b(?:transaction|t\.code|tcode)\s+', text, re.I):
         return "L4"
     if re.search(r'(?:如何|步驟|step|how\s+to|流程|workflow|pipeline|序列|順序|配置)', text, re.I):
         return "L3"
@@ -77,15 +119,26 @@ def _infer_level_regex(text: str) -> str:
         return "L2"
     return "L1"
 
+
 def _infer_type_regex(text: str) -> str:
-    """知識類型（regex fallback）。"""
+    """知識類型（regex fallback）。先試 seed_patterns.yaml，再試通用 fallback。"""
+    _, types = _load_level_type_patterns()
+    if types:
+        for type_name in ("EXPERIENTIAL", "REASONING", "PROCEDURAL"):
+            patterns = types.get(type_name, [])
+            for pat in patterns:
+                try:
+                    if re.search(pat, text, re.I):
+                        return type_name
+                except Exception:
+                    continue
+
+    # Generic fallback
     if re.search(r'(?:不要|避免|注意|小心|陷阱|教訓|pitfall|warning)', text, re.I):
         return "EXPERIENTIAL"
     if re.search(r'(?:實踐中|經驗|l(?:earn|esson).*(?:found|lesson))', text, re.I):
         return "EXPERIENTIAL"
     if re.search(r'(?:因為|所以|因此|導致|原因|原理|why|because|therefore)', text, re.I):
-        return "REASONING"
-    if re.search(r'(?:區別|difference|vs|versus|關係|關聯|correlation|depends)', text, re.I):
         return "REASONING"
     if re.search(r'(?:設計模式|權衡|trade.?off|設計決策|decision)', text, re.I):
         return "REASONING"
@@ -219,44 +272,30 @@ def classify(text: str) -> dict:
     """
     統一分類介面。
 
-    使用 embedding 找最近 centroid，regex 作 fallback。
+    使用 DomainRegistry 找最近 centroid，regex 作 fallback。
     雙路徑：
       Path A (共識): embedding 與 regex 一致，cosine > 0.50
       Path B (高置信): embedding 獨強，score > 0.65, conf > 0.85, margin > 0.08
 
     Returns:
-        {"domain": str, "level": str, "type": str,
+        {"domain": str, "cluster_id": str, "centroid": list[float]|None,
+         "level": str, "type": str,
          "method": "embedding"|"regex_fallback", "confidence": float}
     """
-    centroids = load_centroids()
-    best_score = -1.0
+    registry = DomainRegistry.instance()
+    best_entity, best_score, second_score = registry.classify_text(text)
+    best_score_f = float(best_score)
+    second_score_f = float(second_score)
 
-    if centroids:
-        model = get_model()
-        vec = model.encode([text[:512]], show_progress_bar=False)[0]
-
-        best_score = -1.0
-        second_score = -1.0
-        best_domain = "GENERAL"
-
-        for domain, info in centroids.items():
-            cv = info["centroid"]
-            score = float(dot(vec, cv) / (norm(vec) * norm(cv)))
-            if score > best_score:
-                second_score = best_score
-                best_score = score
-                best_domain = domain
-            elif score > second_score:
-                second_score = score
-
-        confidence = float(max(0, min(1, (best_score + 1) / 2)))
-        margin = best_score - second_score if second_score > -1 else 1.0
+    if best_entity:
+        confidence = float(max(0, min(1, (best_score_f + 1) / 2)))
+        margin = best_score_f - second_score_f if second_score_f > -1 else 1.0
 
         settings = _load_settings()
         regex_domain = _infer_domain_regex(text)
 
         # Path A: 共識路徑
-        consensus = best_domain == regex_domain
+        consensus = best_entity.name == regex_domain
         consensus_threshold = 0.50
 
         # Path B: 高置信路徑
@@ -265,16 +304,19 @@ def classify(text: str) -> dict:
         high_conf_only = settings.get("embedding_only_confidence_threshold", 0.85)
 
         use_embedding = False
-        if consensus and best_score > consensus_threshold:
+        if consensus and best_score_f > consensus_threshold:
             use_embedding = True
-        elif (best_score > high_conf_threshold and
+        elif (best_score_f > high_conf_threshold and
               confidence > high_conf_only and
               margin > high_margin):
             use_embedding = True
 
         if use_embedding:
             result = {
-                "domain": best_domain,
+                "domain": best_entity.name,
+                "cluster_id": best_entity.id,
+                "centroid": best_entity.centroid,
+                "old_domain": best_entity.aliases[0] if best_entity.aliases else None,
                 "level": _infer_level_regex(text),
                 "type": _infer_type_regex(text),
                 "method": "embedding",
@@ -285,9 +327,15 @@ def classify(text: str) -> dict:
 
     # Fallback: regex
     domain = _infer_domain_regex(text)
-    fallback_conf = best_score if best_score > 0.3 else 0.0
+    fallback_conf = best_score_f if best_score_f > 0.3 else 0.0
+
+    # Try to find matching domain in registry by old name
+    fallback_entity = registry.get_by_name(domain)
     result = {
         "domain": domain,
+        "cluster_id": fallback_entity.id if fallback_entity else "",
+        "centroid": fallback_entity.centroid if fallback_entity else None,
+        "old_domain": domain,
         "level": _infer_level_regex(text),
         "type": _infer_type_regex(text),
         "method": "regex_fallback",

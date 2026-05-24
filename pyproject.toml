@@ -37,3 +37,6 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv]
+dev-dependencies = ["pytest>=8"]

@@ -92,7 +92,7 @@ def my_callback(task_id, status, result):
                                 message=f"{task_id} 失败")
     return FeedbackDecision(action=FeedbackAction.CONTINUE)
 
-from kafed.orchestrator import plan, execute
+from kafed.entry import plan, execute
 p = plan("审计知识库", domain="SAP_PM")
 results = execute(p, director_callback=my_callback)
 ```
@@ -182,7 +182,7 @@ secrets = get_secrets()
 secrets.deepseek_api_key       # API 密钥（从 .env）
 
 # Director → Finder → Executor 全链
-from kafed.orchestrator import plan, execute, absorb, dispatch_for, needs_dispatch
+from kafed.entry import plan, execute, absorb, dispatch_for, needs_dispatch
 
 p = plan("分析 SAP PM 模块", domain="SAP_PM")
 # → Finder 自动匹配最佳模型
@@ -237,7 +237,7 @@ logger.info("任务完成", extra={"task_id": "audit_001"})
 ├── src/kafed/
 │   ├── config.py           — 全局配置 (KafedConfig + KafedSecrets)
 │   ├── log.py              — 全局日志
-│   ├── orchestrator.py     — 五层编排器
+│   ├── pipeline.py               — Pipeline 入口层
 │   ├── director/           — 战略决策层 (7 模块)
 │   ├── finder/             — 模型发现层 (5 模块)
 │   ├── executor/           — DAG 执行层 (4 模块 + 监督反馈环)

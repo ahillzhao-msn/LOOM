@@ -7,7 +7,7 @@
 from kafed.analyzer.pulse import (
     pulse, status as pulse_status, status,
     run_task, list_tasks, register_task, unregister_task,
-    TaskConfig, RECOMMENDED_TASKS,
+    TaskConfig, RECOMMENDED_TASKS, check_backlog_and_signal,
 )
 from kafed.analyzer.config import TaskConfig, TaskType, ResourceType
 from kafed.analyzer.audit import AuditEngine, AuditInput, AuditReport, AuditAction, AuditRule, RuleCondition

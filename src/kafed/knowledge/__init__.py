@@ -13,6 +13,8 @@ from kafed.knowledge.rag.vector_store import VectorStore
 from kafed.knowledge.rag.chunker import chunk_document
 from kafed.knowledge.rag.embedding import embed_texts, embed_query, get_model
 from kafed.knowledge.classify.classify import classify, build_centroids, load_centroids
+from kafed.knowledge.classify.domain_registry import DomainRegistry
+from kafed.knowledge.classify.embedding_space import Registry, Entity
 from kafed.knowledge.quality.quality import clean_text, compute_quality_score
 from kafed.knowledge.flywheel.event_checker import EventChecker
 from kafed.knowledge.context.context_provider import ContextProvider, ContextBundle, ContextItem
@@ -21,6 +23,7 @@ __all__ = [
     "RAGEngine", "VectorStore", "chunk_document",
     "embed_texts", "embed_query", "get_model",
     "classify", "build_centroids", "load_centroids",
+    "DomainRegistry", "Registry", "Entity",
     "clean_text", "compute_quality_score",
     "EventChecker",
     "ContextProvider", "ContextBundle", "ContextItem",
