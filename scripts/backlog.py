@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-backlog.py — 內部待辦佇列管理
+backlog.py — 內部待辦佇列管理（CLI）
+
+底層由 kafed.knowledge.backlog 提供。依賴同一份 backlog.json。
 
 用法:
   python backlog.py              # 顯示優先排序的佇列
   python backlog.py --pop        # 取出最高優先的 pending 項
-  python backlog.py --add ...    # 新增事項
+  python backlog.py --add TITLE VALUE URGENCY  # 新增事項
   python backlog.py --done <id>  # 標記完成
   python backlog.py --reprioritize  # 重新計算所有 priority_score
 """
@@ -14,7 +16,14 @@ import json, sys, argparse
 from pathlib import Path
 from datetime import datetime, timezone
 
-BACKLOG_PATH = Path.home() / ".hermes" / "data" / "backlog.json"
+# 路徑跟隨 config（非硬編碼）
+try:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+    from kafed.config import get_config
+    BACKLOG_PATH = get_config().backlog_data
+except ImportError:
+    BACKLOG_PATH = Path.home() / ".hermes" / "data" / "backlog.json"
 
 def load():
     if BACKLOG_PATH.exists():

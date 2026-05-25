@@ -246,7 +246,7 @@ class KafedConfig:
     @property
     def backlog_data(self) -> Path:
         return self._path("KAFED_BACKLOG_DATA", ("backlog_data",),
-                          str(_HOME / ".kafed" / "backlog.json"))
+                          str(_HOME / ".hermes" / "data" / "backlog.json"))
 
     @property
     def backlog_script(self) -> Path:

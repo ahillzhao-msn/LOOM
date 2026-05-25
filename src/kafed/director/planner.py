@@ -55,6 +55,11 @@ class SubTask:
     # 預算
     estimated_tokens: int = 0
     
+    # Finder 選中模型（從 Pipeline 傳入）
+    model_name: str = ""
+    model_provider: str = ""
+    budget: str = "any"
+    
     # 輸出約束
     output_format: Optional[str] = None  # 如 "markdown", "json"
 

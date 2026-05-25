@@ -208,3 +208,21 @@ class ExecutorEngine:
             "status": "ready",
             "executor": "kafed.executor.engine.ExecutorEngine",
         }
+
+
+# ── 默認反饋回調 ──────────────────────────────────
+
+def default_feedback_callback() -> FeedbackCallback:
+    """返回默認的 Executor 監督回調：首次失敗→replan，後續→continue。"""
+    _fail_count: dict[str, int] = {"count": 0}
+
+    def callback(task_id: str, status: str, result: DispatchResult) -> FeedbackDecision:
+        if status == "failed":
+            _fail_count["count"] += 1
+            if _fail_count["count"] == 1:
+                return FeedbackDecision(
+                    action=FeedbackAction.REPLAN,
+                    message=f"Task {task_id} failed, requesting replan",
+                )
+        return FeedbackDecision(action=FeedbackAction.CONTINUE)
+    return callback

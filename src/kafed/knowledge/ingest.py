@@ -5,12 +5,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-from pathlib import Path
 from typing import Any, Optional
-
-from kafed.config import get_config
 
 logger = logging.getLogger("kafed.knowledge.ingest")
 
@@ -82,25 +78,11 @@ def _ingest_to_kafed(text: str, domain: str = "GENERAL",
 
 
 def _ingest_to_backlog(title: str, description: str = "") -> dict:
-    """推入 backlog。"""
+    """推入 backlog（委託 knowledge/backlog.py）。"""
     try:
-        cfg = get_config()
-        bdp = cfg.backlog_data
-        if bdp.exists():
-            data = json.loads(bdp.read_text())
-        else:
-            data = {"items": []}
-
-        data["items"].append({
-            "title": title,
-            "description": description[:200],
-            "status": "pending",
-            "priority_score": 0.7,
-        })
-        bdp.parent.mkdir(parents=True, exist_ok=True)
-        bdp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
-
-        return {"status": "ok", "target": "backlog",
+        from kafed.backlog import push as bp
+        ok = bp(title, value=0.7, description=description)
+        return {"status": "ok" if ok else "error", "target": "backlog",
                 "detail": f"已推入 backlog: {title[:60]}", "entries": 1}
     except Exception as e:
         return {"status": "error", "target": "backlog",
@@ -126,38 +108,18 @@ def _trigger_event(domain: str) -> dict:
 
 
 def backlog_check() -> list[dict]:
-    """檢查 backlog 待辦。"""
+    """檢查 backlog 待辦（委託 knowledge/backlog.py）。"""
     try:
-        from kafed.config import get_config
-        bdp = get_config().backlog_data
-        if not bdp.exists():
-            return []
-        data = json.loads(bdp.read_text())
-        items = data.get("items", [])
-        pending = [i for i in items if i.get("status") == "pending"]
-        pending.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
-        return pending
+        from kafed.backlog import check
+        return check()
     except Exception:
         return []
 
 
 def backlog_push(title: str, value: float = 0.7) -> bool:
-    """推入 backlog（簡易版）。"""
+    """推入 backlog（委託 knowledge/backlog.py）。"""
     try:
-        from kafed.config import get_config
-        cfg = get_config()
-        bdp = cfg.backlog_data
-        if bdp.exists():
-            data = json.loads(bdp.read_text())
-        else:
-            data = {"items": []}
-        data["items"].append({
-            "title": title[:80],
-            "status": "pending",
-            "priority_score": value,
-        })
-        bdp.parent.mkdir(parents=True, exist_ok=True)
-        bdp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
-        return True
+        from kafed.backlog import push
+        return push(title, value=value)
     except Exception:
         return False

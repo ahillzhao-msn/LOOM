@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from kafed.entry import (
-    SubTask, Plan, TaskResult,
+    SubTask, TaskPlan as Plan, TaskResult,
     recall, eval as pipeline_eval,
     solidify, backlog_check, backlog_push,
     session_start, session_end, session_end_audit,
@@ -14,13 +14,14 @@ from kafed.entry import (
 class TestPipelineDTOs:
     def test_subtask_defaults(self):
         st = SubTask(id="t1", description="test")
-        assert st.domain == "GENERAL"
+        assert st.domain is None
         assert st.depends_on == []
         assert st.model_name == ""
 
     def test_plan_create(self):
-        p = Plan(subtasks=[SubTask(id="t1", description="test")])
+        p = Plan(id="test_plan", goal="test", subtasks=[SubTask(id="t1", description="test")])
         assert len(p.subtasks) == 1
+        assert p.goal == "test"
 
     def test_task_result(self):
         tr = TaskResult(task_id="t1", description="test", status="completed")
