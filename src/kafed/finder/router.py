@@ -1,16 +1,26 @@
-"""KAFED Finder — 路由協議（find_partners）。
+"""
+KAFED Finder — 路由協議（find_partners）。
+
+三向量聚合架構（核心邏輯）：
+  find_partners 接收 three 輸入向量流，輸出 N 個匹配結果（N = 子任務數）：
+
+  輸入 1: 子任務向量組  — Director 分解後的 N 個任務自然語言描述 → N 個 embedding
+  輸入 2: 模型向量池    — Explorer 定期掃描全量可用模型 → 按公共 schema 生成嵌入
+  輸入 3: 實時狀態向量  — 心跳/即時查詢獲取（可達性、響應速度、在線狀態）
+
+  聚合：每個子任務獨立做 cosine similarity（子任務 ⊗ 模型向量） + 語境調製 + 狀態加權
+  輸出：每個子任務 → 匹配度排序的模型候選列表 → Director 做最終選擇
+
+  所有模型維度（context_window / 能力標籤 / 成本 / 溫控等）統一由 schema
+  生成嵌入描述，不單獨做 field-by-field 硬編碼過濾。
 
 雙模式路由：
-  fast_route — 模型池 < fast_route_max_workers（默認 3）時走快速路
-              直接用 Hermes 默認模型 + 本地探活 + config.yaml
-  full_route — 多模型場景走完整三維聚合：
-              能力匹配 (w_cap) + 語境調製 (w_ctx) + 實時狀態 (w_sta)
+  fast_route  — 模型池 < 閾值：跳過 embedding，走 Hermes CLI 即時發現
+  full_route  — 完整三向量聚合
 
-唯一入口：find_partners(task_brief) → FindPartnersResult
-Router 不自己選模型——只返回候選列表 + 匹配度。
-最終選擇由 Director 的決策樹完成。
-
-所有超參數從 config.py 讀取，零硬編碼。
+唯一入口：find_partners(briefs) → list[FindPartnersResult]
+Router 不選模型——只返回每個子任務的匹配度排序候選列表。
+最終選擇由 Director 決策樹 + 三省完成。
 """
 
 from __future__ import annotations
@@ -18,11 +28,9 @@ from __future__ import annotations
 import json
 import pickle
 import subprocess
-from typing import Any, Optional
+from typing import Optional
 
 import numpy as np
-from numpy import dot
-from numpy.linalg import norm
 import yaml
 
 from kafed.config import get_config
@@ -34,9 +42,9 @@ from kafed.finder.context_space import ContextSpace
 class Router:
     """路由協議。
 
-    雙模式：
-      - fast_route: 可用模型 < 3 時，跳過 embedding 匹配，用 Hermes 配置+探活
-      - full_route: 完整三維聚合
+    雙模式（自動切換）：
+      - fast_route: 可用模型 < 閾值 → 直連 Hermes 配置 + 本地探活
+      - full_route: 三向量聚合（任務 ⊗ 模型 ⊗ 狀態）
     """
 
     def __init__(self):
@@ -60,48 +68,202 @@ class Router:
             except Exception:
                 self._vectors = {}
 
+        # 冷啟動：向量不存在或為空時自動掃描生成
+        if not self._vectors:
+            try:
+                from kafed.finder.explorer import Explorer
+                workers = Explorer.scan_all()
+                Explorer.update_vector_space(workers)
+                # 重新載入
+                if vp.exists():
+                    with open(vp, "rb") as f:
+                        self._vectors = pickle.load(f)
+            except Exception as exc:
+                pass  # 生成失敗時保持空向量，走 keyword fallback
+
     # ══════════════════════════════════════════════════
     # 唯一入口
     # ══════════════════════════════════════════════════
 
-    def find_partners(self, brief: str, budget: str = "any",
+    def find_partners(self, briefs: list[str], budget: str = "any",
                        prefer_local: bool = False, top_k: int = 5,
                        domain: Optional[str] = None,
-                       context_vec: Optional[list[float]] = None) -> FindPartnersResult:
-        """自然語言任務描述 → 候選列表。
+                       context_vec: Optional[list[float]] = None) -> list[FindPartnersResult]:
+        """N 個子任務描述 → N 個匹配結果（每個含候選列表）。
 
-        自動選擇 fast_route 或 full_route，調用方無需感知。
+        Director 分解後有 N 個子任務，就返回 N 個結果。
+
+        Args:
+            briefs:        子任務描述列表（每個 → embedding）
+            budget:        free / low / any
+            prefer_local:  偏愛本地
+            top_k:         每個子任務返回 top-k 候選
+            domain:        領域過濾
+            context_vec:   當前語境向量（ContextSpace 調製用）
         """
-        request = FindPartnersRequest(
-            task_brief=brief, budget=budget,
-            prefer_local=prefer_local, top_k=top_k,
-            domain=domain, context_vec=context_vec,
-        )
+        if not briefs:
+            return []
 
-        # 判斷模式
+        # ── 判斷模式 + 共享模型發現 ──
         candidates = self.registry.load()
         online_count = sum(1 for c in candidates if c.is_online)
+        is_fast = online_count < self._cfg.fast_route_max_workers
 
-        if online_count < self._cfg.fast_route_max_workers:
-            return self._fast_route(request, candidates)
+        if is_fast:
+            workers = self._discover_fast_workers()
         else:
-            return self._full_route(request, candidates)
+            workers = list(candidates)
+
+        # ── 共享預處理（所有子任務共用同一模型池的過濾+狀態）──
+        workers = self._prepare_candidate_pool(workers, budget, prefer_local)
+
+        # ── 每個子任務獨立做匹配 ──
+        results: list[FindPartnersResult] = []
+        for i, brief in enumerate(briefs):
+            req = FindPartnersRequest(
+                task_brief=brief, budget=budget,
+                prefer_local=prefer_local, top_k=top_k,
+                domain=domain, context_vec=context_vec,
+            )
+
+            # 每個子任務獨立拷貝候選列表（匹配分數是 per-brief 的）
+            cands = [self._copy_candidate(c) for c in workers]
+
+            if is_fast:
+                # fast route: 用靜態分數排序（無 embedding 匹配）
+                cands.sort(key=lambda c: c.match_score, reverse=True)
+                result_kwargs: dict = dict(match_method="hermes_cli", route_mode="fast")
+            else:
+                # full route: 三向量聚合
+                result_kwargs: dict = self._match_one(brief, cands, context_vec)
+
+            top = cands[:top_k]
+            # 補充不足
+            if len(top) < 3:
+                extra = self._discover_config_workers()
+                for w in extra:
+                    if w not in top:
+                        top.append(w)
+                top = top[:top_k]
+
+            results.append(FindPartnersResult(
+                request=req, candidates=top,
+                total_candidates=len(cands),
+                task_index=i,
+                **result_kwargs,
+            ))
+
+        return results
 
     # ══════════════════════════════════════════════════
-    # 快速路由
+    # 共享：模型池準備
     # ══════════════════════════════════════════════════
 
-    def _fast_route(self, request: FindPartnersRequest,
-                    candidates: list[WorkerCandidate]) -> FindPartnersResult:
-        """模型池 < 3 時：直接從 Hermes 配置 + 本地探活獲取模型。"""
+    def _prepare_candidate_pool(self, workers: list[WorkerCandidate],
+                                 budget: str, prefer_local: bool) -> list[WorkerCandidate]:
+        """模型池預處理（過濾 + 探活），所有子任務共用。"""
+        # 預算過濾
+        if budget == "free":
+            workers = [c for c in workers if c.is_free]
+
+        # 本地優先
+        if prefer_local:
+            local = [c for c in workers if c.provider == "local"]
+            if local:
+                workers = local + [c for c in workers if c.provider != "local"]
+
+        # 從 StatusCache 讀取狀態（零網路 I/O），未快取者設 force_probe
+        workers = self.registry.verify_candidates(workers, force=True)
+
+        return workers
+
+    @staticmethod
+    def _copy_candidate(c: WorkerCandidate) -> WorkerCandidate:
+        """輕量拷貝，保留身份和狀態但重置 match_score。"""
+        nc = WorkerCandidate(
+            name=c.name, provider=c.provider, model_id=c.model_id,
+            meta=dict(c.meta), is_online=c.is_online,
+            is_free=c.is_free, cost_per_token=c.cost_per_token,
+            capability_tags=list(c.capability_tags),
+            estimated_tps=c.estimated_tps,
+            status_vector=list(c.status_vector),
+            match_score=0.5,  # 每個子任務重新計算
+        )
+        nc.total_calls = c.total_calls
+        nc.success_rate = c.success_rate
+        return nc
+
+    # ══════════════════════════════════════════════════
+    # 單個子任務的三向量聚合
+    # ══════════════════════════════════════════════════
+
+    def _match_one(self, brief: str, cands: list[WorkerCandidate],
+                   context_vec: Optional[list[float]]) -> dict:
+        """一個子任務的完整三向量聚合。
+
+        返回 Result 構建參數字典（match_method, route_mode, aggregation）。
+        """
         from kafed.client.flow import chain
         chain("find/route", [
-            ("mod", "fast", f"workers={len(candidates)}"),
-        ], end="config+local")
+            ("mod", "full", f"cands={len(cands)}"),
+        ], end=f"brief={brief[:30]}")
+
+        # ── 輸入 1 ⊗ 輸入 2: 子任務向量 × 模型向量（cosine similarity）──
+        if self._vectors and brief:
+            self._match_capability(brief, cands)
+
+        # ── 語境調製（ContextSpace 近期歷史偏向）──
+        ctx_boosts: dict[str, float] = {}
+        if context_vec is not None:
+            cs = self._lazy_context()
+            ctx_boosts = cs.modulate(context_vec, cands)
+            for c in cands:
+                c.context_boost = ctx_boosts.get(c.name, 0.0)
+
+        # ── 三維聚合評分 ──
+        w_cap = self._cfg.finder_w_cap
+        w_ctx = self._cfg.finder_w_ctx
+        w_sta = self._cfg.finder_w_sta
+
+        for c in cands:
+            cap_score = c.match_score
+            ctx_score = c.context_boost
+            sv = c.status_vector if len(c.status_vector) >= 3 else [1.0, 0.0, 0.0, 0.0]
+            # 線上 + TPS + 負載（latency 保留未來用）
+            sta_score = sv[0] * 0.5 + sv[1] * 0.3 + (1.0 - sv[2]) * 0.2
+            c.match_score = round(
+                w_cap * cap_score + w_ctx * ctx_score + w_sta * sta_score,
+                4,
+            )
+
+        # ── 排序 ──
+        cands.sort(key=lambda c: (c.is_online, c.match_score, c.success_rate), reverse=True)
+
+        agg = {
+            "w_cap": w_cap, "w_ctx": w_ctx, "w_sta": w_sta,
+            "n_candidates": len(cands),
+        }
+
+        chain("find/done", [
+            ("cap", f"{w_cap}", ""),
+            ("ctx", f"{w_ctx}", ""),
+            ("sta", f"{w_sta}", ""),
+        ], end=f"best={cands[0].name if cands else 'none'}")
+
+        return dict(match_method="embedding", route_mode="full", aggregation=agg)
+
+    # ══════════════════════════════════════════════════
+    # 快速發現（fast route 專用）
+    # ══════════════════════════════════════════════════
+
+    def _discover_fast_workers(self) -> list[WorkerCandidate]:
+        """模型池 < 閾值時：跳過嵌入匹配，走 CLI + 即時探活。"""
+        from kafed.client.flow import chain
+        chain("find/route", [("mod", "fast", "")], end="local+config")
 
         workers: list[WorkerCandidate] = []
 
-        # 1. hermes model current（如果 hermes CLI 可用）
+        # 1. hermes CLI default model
         try:
             result = subprocess.run(
                 ["hermes", "config", "get", "default_model"],
@@ -117,7 +279,7 @@ class Router:
         except Exception:
             pass
 
-        # 2. llama-server /v1/models 即時發現
+        # 2. llama-server /v1/models
         try:
             r = subprocess.run(
                 ["curl", "-s", "--connect-timeout", "3",
@@ -137,7 +299,7 @@ class Router:
         except Exception:
             pass
 
-        # 3. config.yaml models 節
+        # 3. config.yaml
         cp = self._cfg.config_path
         if cp.exists():
             try:
@@ -154,125 +316,52 @@ class Router:
             except Exception:
                 pass
 
-        # 4. 探活 + 排序
+        # 探活
         live = self.registry.verify_candidates(workers)
-        live.sort(key=lambda c: c.match_score, reverse=True)
-
-        chain("find/done", [
-            ("", f"{len(live)} candidates", ""),
-        ], end="fast_route")
-
-        return FindPartnersResult(
-            request=request, candidates=live[:request.top_k],
-            total_candidates=len(live),
-            match_method="hermes_cli", route_mode="fast",
-        )
+        chain("find/done", [("", f"{len(live)} fast workers", "")], end="")
+        return live
 
     # ══════════════════════════════════════════════════
-    # 完整路由（三維聚合）
-    # ══════════════════════════════════════════════════
-
-    def _full_route(self, request: FindPartnersRequest,
-                    candidates: list[WorkerCandidate]) -> FindPartnersResult:
-        """三維聚合路由：能力匹配 × 語境調製 × 實時狀態。"""
-        from kafed.client.flow import chain
-        chain("find/route", [
-            ("mod", "full", f"workers={len(candidates)}"),
-        ], end="embed+ctx+status")
-
-        cands = list(candidates)
-
-        # Step 1: 預算過濾
-        if request.budget == "free":
-            cands = [c for c in cands if c.is_free]
-
-        # Step 2: 本地優先
-        if request.prefer_local:
-            local = [c for c in cands if c.provider == "local"]
-            if local:
-                cands = local + [c for c in cands if c.provider != "local"]
-
-        # Step 3: 能力匹配 (w_cap)
-        if self._vectors and request.task_brief:
-            self._match_capability(request.task_brief, cands)
-
-        # Step 4: 語境調製 (w_ctx)
-        ctx_boosts: dict[str, float] = {}
-        if request.context_vec is not None:
-            cs = self._lazy_context()
-            ctx_boosts = cs.modulate(request.context_vec, cands)
-            for c in cands:
-                c.context_boost = ctx_boosts.get(c.name, 0.0)
-
-        # Step 5: 實時狀態 (w_sta) — 探活 + 狀態向量
-        live = self.registry.verify_candidates(cands[:20])
-        offline_names = {c.name for c in cands[:20] if not c.is_online}
-        cands = live + [c for c in cands[20:] if c.name not in offline_names]
-
-        # Step 6: 三維聚合評分
-        w_cap = self._cfg.finder_w_cap
-        w_ctx = self._cfg.finder_w_ctx
-        w_sta = self._cfg.finder_w_sta
-
-        for c in cands:
-            cap_score = c.match_score  # 來自 embedding
-            ctx_score = c.context_boost
-            # 狀態維度：online + tps
-            sv = c.status_vector if len(c.status_vector) >= 2 else [1.0, 0.0, 0.0]
-            sta_score = sv[0] * 0.6 + sv[1] * 0.4
-            c.match_score = round(
-                w_cap * cap_score + w_ctx * ctx_score + w_sta * sta_score,
-                4,
-            )
-
-        # Step 7: 排序
-        cands.sort(key=lambda c: (c.is_online, c.match_score, c.success_rate), reverse=True)
-
-        # Step 8: 補充（在線不足時）
-        top = cands[:request.top_k]
-        if len(top) < 3:
-            config_workers = self._discover_config_workers()
-            for w in config_workers:
-                if w not in top:
-                    top.append(w)
-            top = top[:request.top_k]
-
-        agg = {
-            "w_cap": w_cap, "w_ctx": w_ctx, "w_sta": w_sta,
-            "n_candidates": len(cands),
-            "n_live": len(live),
-        }
-
-        chain("find/done", [
-            ("cap", f"{w_cap}", ""),
-            ("ctx", f"{w_ctx}", ""),
-            ("sta", f"{w_sta}", ""),
-        ], end=f"{len(top)}/{len(cands)}")
-
-        return FindPartnersResult(
-            request=request, candidates=top,
-            total_candidates=len(cands),
-            match_method="embedding", route_mode="full",
-            aggregation=agg,
-        )
-
-    # ══════════════════════════════════════════════════
-    # 能力匹配
+    # 能力匹配（輸入 1 ⊗ 輸入 2 的 cosine similarity）
     # ══════════════════════════════════════════════════
 
     def _match_capability(self, brief: str, candidates: list[WorkerCandidate]) -> None:
-        """對候選列表進行 embedding 能力匹配。"""
+        """任務描述 embedding × 模型向量矩陣 = cosine similarity（向量化）。"""
+        if not self._vectors:
+            return
         from kafed.knowledge.rag.embedding import embed_texts
-        brief_vec = embed_texts([brief])[0]
-        for c in candidates[:50]:
-            vec = self._vectors.get(c.name) or self._vectors.get(c.model_id)
-            if vec is not None:
-                sim = float(dot(brief_vec, vec) / (norm(brief_vec) * norm(vec) + 1e-10))
-                c.match_score = max(0.0, min(1.0, (sim + 1) / 2))
+        brief_vec = np.array(embed_texts([brief])[0], dtype=np.float32)
+
+        # 收集有向量的候選 → 矩陣
+        vec_indices: list[int] = []
+        vec_rows: list[np.ndarray] = []
+        novec_indices: list[int] = []
+        for idx, c in enumerate(candidates[:100]):
+            v = (self._vectors.get(c.name) if c.name else None)
+            if v is None:
+                v = self._vectors.get(c.model_id) if c.model_id else None
+            if v is not None:
+                vec_indices.append(idx)
+                vec_rows.append(np.asarray(v, dtype=np.float32))
             else:
-                # 無向量 → keyword 啟發式
-                brief_lower = brief.lower()
-                c.match_score = max(0.0, self._keyword_match(
+                novec_indices.append(idx)
+
+        # 向量化 cosine similarity（矩陣運算 O(1) 而非 O(N)）
+        if vec_rows:
+            mat = np.stack(vec_rows, axis=0)            # (M, D)
+            b_norm = np.linalg.norm(brief_vec)
+            m_norm = np.linalg.norm(mat, axis=1)         # (M,)
+            sims = (mat @ brief_vec) / (m_norm * b_norm + 1e-10)
+            sims = np.clip((sims + 1) / 2, 0.0, 1.0)     # [-1,1] → [0,1]
+            for pos, idx in enumerate(vec_indices):
+                candidates[idx].match_score = round(float(sims[pos]), 4)
+
+        # keyword fallback（無向量的候選）
+        if novec_indices:
+            brief_lower = brief.lower()
+            for idx in novec_indices:
+                c = candidates[idx]
+                candidates[idx].match_score = max(0.0, self._keyword_match(
                     brief_lower, c.name.lower(), c.domain.lower()))
 
     def _keyword_match(self, brief: str, name: str, domain: str) -> float:
@@ -297,7 +386,7 @@ class Router:
                        model_name: str, success: bool = True,
                        user_input: str = "", eval_info: str = "",
                        hexagram_info: str = "") -> None:
-        """記錄交互語境到 ContextSpace。由 Director 每輪結束時調用。"""
+        """記錄交互語境到 ContextSpace。"""
         cs = self._lazy_context()
         cs.record(context_vec, model_name, success=success,
                   user_input=user_input, eval_info=eval_info,
@@ -348,12 +437,24 @@ def get_router() -> Router:
     return _router
 
 
-def find_partners(brief: str, budget: str = "any",
+def find_partners(brief: str | list[str], budget: str = "any",
                    prefer_local: bool = False, top_k: int = 5,
                    domain: Optional[str] = None,
-                   context_vec: Optional[list[float]] = None) -> FindPartnersResult:
-    """便利函數：直接調用 find_partners。"""
+                   context_vec: Optional[list[float]] = None) -> list[FindPartnersResult]:
+    """便利函數：單任務自動包裝，多任務直接傳。
+
+    Args:
+        brief: 單個任務描述（str）或多個（list[str]）。單個時自動轉為 [brief]。
+        其餘參數同 Router.find_partners。
+
+    Returns:
+        list[FindPartnersResult] — 長度 = 子任務數。
+    """
+    if isinstance(brief, str):
+        briefs = [brief]
+    else:
+        briefs = brief
     return get_router().find_partners(
-        brief, budget, prefer_local, top_k, domain,
+        briefs, budget, prefer_local, top_k, domain,
         context_vec=context_vec,
     )

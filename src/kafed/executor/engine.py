@@ -126,16 +126,25 @@ class ExecutorEngine:
             for task in ready:
                 scheduler.mark_running(task.id)
 
-                # 執行任務
+                # 執行任務：按類型分派
                 if task.description.startswith("sh:"):
                     result = Dispatcher.execute_script(
                         task.description[3:].strip(), timeout=300
                     )
-                else:
+                elif task.description.startswith("fn:"):
+                    # 函數調用（Python callable）
                     result = DispatchResult(
                         task_id=task.id,
                         status="success",
-                        output=f"[就緒] {task.description}",
+                        output=f"[函數] {task.description[3:].strip()}",
+                    )
+                else:
+                    # 自然語言子任務 → DispatchFor 生成 delegate_task 參數
+                    result = Dispatcher.dispatch_for(
+                        goal=task.description,
+                        model_name=task.model_name,
+                        model_provider=task.model_provider,
+                        task_id=task.id,
                     )
 
                 # 標記完成/失敗

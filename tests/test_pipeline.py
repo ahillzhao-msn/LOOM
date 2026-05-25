@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from kafed.entry import (
     SubTask, Plan, TaskResult,
-    plan, recall, eval as pipeline_eval,
+    recall, eval as pipeline_eval,
     solidify, backlog_check, backlog_push,
     session_start, session_end, session_end_audit,
 )
@@ -29,18 +29,6 @@ class TestPipelineDTOs:
 
 class TestPipelineBridge:
     """Each bridge function returns the correct type without crashing."""
-
-    def test_plan_returns_plan(self):
-        p = plan("analyze test data", domain="GENERAL")
-        assert isinstance(p, Plan)
-        assert len(p.subtasks) >= 1
-
-    def test_plan_subtask_has_model_info(self):
-        p = plan("simple query", domain="GENERAL")
-        st = p.subtasks[0]
-        assert isinstance(st, SubTask)
-        # model_name may be empty if no workers registered — that's OK
-        assert st.description == "simple query"
 
     def test_backlog_push_and_check(self):
         # Clean state

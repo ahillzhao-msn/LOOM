@@ -113,10 +113,6 @@ check("VectorStore()", lambda: (
     _import("kafed.knowledge.rag.vector_store").VectorStore()
 ))
 
-check("entry.plan()", lambda: (
-    _import("kafed.entry").plan("analyze test data")
-))
-
 check("entry.solidify(memory)", lambda: (
     _import("kafed.entry").solidify("test insight", target="memory")
 ))

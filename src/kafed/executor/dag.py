@@ -32,6 +32,10 @@ class Task:
     error: str = ""
     retries: int = 0
     max_retries: int = 1
+
+    # Finder 選中的模型（從 Plan.SubTask 傳入）
+    model_name: str = ""
+    model_provider: str = ""
     
     def can_run(self, completed_ids: set[str]) -> bool:
         return (

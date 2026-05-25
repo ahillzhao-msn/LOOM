@@ -173,46 +173,59 @@ class Registry:
         except Exception:
             return False
 
-    def verify_candidates(self, candidates: list[WorkerCandidate]) -> list[WorkerCandidate]:
-        """批量驗證候選模型可用性，更新 is_online + status_vector。"""
-        verified: list[WorkerCandidate] = []
-        for c in candidates:
-            alive = self.is_online(c.name, c.provider)
-            c.is_online = alive
-            c.status_vector = self.get_status_vector(c.name, c.provider)
-            if alive:
-                verified.append(c)
-        return verified
+    def verify_candidates(self, candidates: list[WorkerCandidate],
+                          force: bool = False) -> list[WorkerCandidate]:
+        """從 StatusCache 讀取狀態（零網路 I/O）。
 
-    # ── 狀態向量 ──────────────────────────────────────
+        Args:
+            candidates: 候選列表
+            force: 若 True，對未快取的模型設 force_probe 標記
+
+        返回：帶 status_vector 的候選列表（與原簽名相容）。
+        若 cache 無數據，返回所有候選（假設在線，讓 heartbeat 補）。
+        """
+        from kafed.finder.status_cache import StatusCache
+        cache = StatusCache()
+
+        for c in candidates:
+            entry = cache.get(c.name)
+            if entry is not None:
+                c.is_online = entry.online
+                c.status_vector = entry.status_vector  # 4-dim
+            else:
+                c.is_online = True  # 暫信任在線
+                c.status_vector = [1.0, 0.3, 0.0, 0.0]  # 保守默認
+                if force:
+                    # 設 force_probe 標記讓 heartbeat 處理
+                    from kafed.finder.status_cache import StatusEntry
+                    stub = StatusEntry(
+                        name=c.name, provider=c.provider,
+                        force_probe=True,
+                    )
+                    cache.update(c.name, stub)
+                    cache.save()
+
+        return candidates
+
+    # ── 向後相容 ──────────────────────────────────────
 
     def get_status_vector(self, name: str, provider: str = "") -> list[float]:
-        """返回模型實時狀態向量 [online, tps_norm, load_norm]。
+        """從 StatusCache 讀取（向後相容）。
 
-        各維度:
-            online(0/1) — 探活得出的可用性
-            tps_norm(0-1) — TPS 歸一化（本地估算，雲端用歷史）
-            load_norm(0-1) — 負載程度（目前恆為 0，保留擴展）
-
-        返回三元素 list，供 find_partners 三維聚合使用。
+        回退策略：cache 有 → 用 cache；無 → 保守默認 + 設 force_probe。
         """
-        alive = self.is_online(name, provider)
-        online_f = 1.0 if alive else 0.0
+        from kafed.finder.status_cache import StatusCache
+        cache = StatusCache()
+        entry = cache.get(name)
+        if entry is not None:
+            return entry.status_vector
 
-        # TPS 估算：本地模型從 roster 讀取，雲端用默認
-        tps = 0
-        for w in self._roster:
-            if w.get("name") == name or w.get("id") == name:
-                tps = w.get("estimated_tps", 0)
-                break
-        # 本地 llama-server 常見 TPS（無數據時用合理默認）
-        if tps <= 0 and provider in ("local", "llamacpp"):
-            tps = 55  # Qwen3.5-9B Q4_K_M 典型值
-        tps_norm = min(1.0, tps / 200.0)  # 200 tps = 滿分
-
-        return [online_f, round(tps_norm, 4), 0.0]
-
-    # ── 註冊與歷史 ──────────────────────────────
+        # 設 force_probe
+        from kafed.finder.status_cache import StatusEntry
+        stub = StatusEntry(name=name, provider=provider, force_probe=True)
+        cache.update(name, stub)
+        cache.save()
+        return [1.0, 0.3, 0.0, 0.0]
 
     def register(self, worker_id: str, worker_type: str = "expert",
                  domain: str = "", provider: str = "local",

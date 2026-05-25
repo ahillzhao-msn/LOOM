@@ -233,6 +233,11 @@ class KafedConfig:
                           str(_HOME / ".kafed" / "finder_context"))
 
     @property
+    def status_cache_path(self) -> Path:
+        return self._path("KAFED_STATUS_CACHE", ("finder", "status_cache"),
+                          str(_HOME / ".kafed" / "status_cache.pkl"))
+
+    @property
     def config_path(self) -> Path:
         return self._path("KAFED_CONFIG_PATH", ("config_path",),
                           str(_HOME / ".hermes" / "config.yaml"))
@@ -346,6 +351,27 @@ class KafedConfig:
     def finder_w_sta(self) -> float:
         return self._float("KAFED_FINDER_W_STA", ("finder", "w_sta"), 0.2)
 
+    # Heartbeat
+    @property
+    def heartbeat_base_local(self) -> float:
+        return self._float("KAFED_HEARTBEAT_BASE_LOCAL", ("finder", "heartbeat_base_local"), 10.0)
+
+    @property
+    def heartbeat_base_cloud(self) -> float:
+        return self._float("KAFED_HEARTBEAT_BASE_CLOUD", ("finder", "heartbeat_base_cloud"), 60.0)
+
+    @property
+    def heartbeat_max_local(self) -> float:
+        return self._float("KAFED_HEARTBEAT_MAX_LOCAL", ("finder", "heartbeat_max_local"), 120.0)
+
+    @property
+    def heartbeat_max_cloud(self) -> float:
+        return self._float("KAFED_HEARTBEAT_MAX_CLOUD", ("finder", "heartbeat_max_cloud"), 600.0)
+
+    @property
+    def heartbeat_freshness_threshold(self) -> float:
+        return self._float("KAFED_HEARTBEAT_FRESHNESS_THRESHOLD", ("finder", "freshness_threshold"), 0.3)
+
     @property
     def context_buffer_size(self) -> int:
         return self._int("KAFED_CONTEXT_BUFFER_SIZE", ("finder", "context_buffer_size"), 500)
@@ -368,11 +394,20 @@ class KafedConfig:
     def cloud_models(self) -> list[dict]:
         return self._list(("cloud_models",), [
             {"name": "deepseek-v4-flash", "provider": "deepseek",
-             "is_free": False, "cost": 0.00015, "tags": ["reasoning", "coding"]},
+             "is_free": False, "cost": 0.00015, "context_window": 65536,
+             "supports_reasoning": True, "supports_vision": False,
+             "supports_functions": True, "temperature": 0.0,
+             "tags": ["reasoning", "coding", "fast"]},
             {"name": "claude-sonnet-4", "provider": "anthropic",
-             "is_free": False, "cost": 0.003, "tags": ["reasoning", "analysis"]},
+             "is_free": False, "cost": 0.003, "context_window": 200000,
+             "supports_reasoning": True, "supports_vision": True,
+             "supports_functions": True, "temperature": 0.6,
+             "tags": ["reasoning", "analysis", "long_context"]},
             {"name": "gpt-4o", "provider": "openai",
-             "is_free": False, "cost": 0.0025, "tags": ["reasoning", "vision"]},
+             "is_free": False, "cost": 0.0025, "context_window": 128000,
+             "supports_reasoning": False, "supports_vision": True,
+             "supports_functions": True, "temperature": 0.6,
+             "tags": ["reasoning", "vision", "general"]},
         ])
 
     @property
@@ -427,6 +462,13 @@ class KafedConfig:
         lines.append(f"  ctx_boost:    {self.context_boost_amount}")
         lines.append(f"  cloud_models: {len(self.cloud_models)}")
         lines.append(f"  endpoints:    {len(self.health_endpoints)}")
+        lines.append("")
+        lines.append("── Heartbeat ──")
+        lines.append(f"  local base:   {self.heartbeat_base_local}s")
+        lines.append(f"  cloud base:   {self.heartbeat_base_cloud}s")
+        lines.append(f"  local max:    {self.heartbeat_max_local}s")
+        lines.append(f"  cloud max:    {self.heartbeat_max_cloud}s")
+        lines.append(f"  freshness:    < {self.heartbeat_freshness_threshold}")
         lines.append("")
         lines.append("── 飛輪事件 ──")
         lines.append(f"  E1:           {self.e1_thresholds}")
