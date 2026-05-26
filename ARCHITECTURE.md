@@ -1,6 +1,6 @@
 # KAFED Architecture
 
-> Version 2.1.0 · Five-layer intelligent flywheel · 93K+ chunks · 38 domains
+> Version 2.2.0 · Five-layer intelligent flywheel · Environment-adaptive bootstrap · 45 tests
 
 ---
 
@@ -10,9 +10,11 @@
 2. [Layer Architecture](#2-layer-architecture)
 3. [Data Flow](#3-data-flow)
 4. [Component Details](#4-component-details)
-5. [Configuration System](#5-configuration-system)
-6. [Knowledge Lifecycle](#6-knowledge-lifecycle)
-7. [Testing & Quality](#7-testing--quality)
+5. [Cron Schedule](#5-cron-schedule)
+6. [Bootstrap & Installation](#6-bootstrap--installation)
+7. [Configuration System](#7-configuration-system)
+8. [Knowledge Lifecycle](#8-knowledge-lifecycle)
+9. [Testing & Quality](#9-testing--quality)
 
 ---
 
@@ -161,26 +163,204 @@ The runner tracks step status (pending/running/done/skipped/blocked) and enforce
 
 #### Router (`finder/router.py`)
 
-Dual-mode routing:
+Dual-mode routing — the single entry point `find_partners(briefs)` accepts N task descriptions and returns N ranked candidate lists:
 
 | Mode | Trigger | Method |
 |------|---------|--------|
 | `fast_route` | < 3 workers | Direct llama.cpp discovery + config scan |
 | `full_route` | ≥ 3 workers | 3-vector aggregation: task ⊗ model ⊗ status |
 
+**Three-vector aggregation** (the core routing logic):
+
+```
+sub_task_embeddings (N × 384d)
+         │
+    cosine similarity  ← task embedding ⊗ model capability vectors
+         + context_boost  ← ContextSpace dynamic buffer (recent context)
+         + sta_score      ← status_vector × [w_cap, w_ctx, w_sta]
+         │
+         ▼
+    N × FindPartnersResult (each: top-k candidates sorted by aggregate score)
+         │
+         ▼ Director decision tree + three reflections — final selection
+```
+
+Each dimension has its own embedding space and refresh cycle:
+
+| Dimension | Source | Refresh | Decay |
+|-----------|--------|---------|-------|
+| Capability (model vectors) | Explorer `scan_all()` → `update_vector_space()` | Daily (cron) | None (full overwrite) |
+| Context (task history) | ContextSpace buffer | Per-query | FIFO (500 entries) |
+| Status (online/TPS/load) | Heartbeat probes | Per-probe | Exponential freshness decay |
+
 #### Registry (`finder/registry.py`)
 
-Manages `roster.yaml` — the canonical model pool. Loads from:
-1. `roster.yaml` (if exists)
-2. `config.yaml` (Hermes config, if roster missing)
-3. `cloud_models` (from config.py, always included)
+**v2.2 redesign**: Registry is now a pure query layer over Explorer's vector space.
+
+- `roster.yaml` **removed** — all model data lives in Explorer's `worker_vectors.pkl`
+- `register()`, `report_success()`, `sync_roster()` removed
+- `load()` → reads from `worker_vectors.pkl` (auto-triggers Explorer scan if empty)
+- `verify_candidates()` → reads real-time status from `StatusCache` (zero network I/O)
+- `get_status_vector()` → decorator for StatusCache access
+
+The Registry no longer owns model data — it's a thin bridge between Explorer (who discovers) and Heartbeat (who monitors).
 
 #### Explorer (`finder/explorer.py`)
 
-Scans all model sources:
-1. `llama-server /v1/models` — local models with full metadata
-2. `config.yaml` — Hermes provider models
-3. `roster.yaml` / `cloud_models` — pre-registered + cloud models
+**v2.2 redesign**: Single-source model discovery from Hermes config.yaml.
+
+```
+scan_all()
+  │
+  ├─ _load_hermes_config()        # Reads config.yaml directly (no CLI)
+  ├─ _discover_model_roles()      # auxiliary/tts/stt/fallback → role tags
+  ├─ for each provider:
+  │    ├─ _get_model_names()      # models list + /v1/models fallback for llamacpp
+  │    ├─ pricing.resolve()       # PricingTable (cache > builtin > default)
+  │    └─ _query_provider_models_api()  # /v1/models metadata enrichment
+  ├─ _add_unreferenced_models()   # Roles without provider entries
+  └─ pricing.save()               # Persist discovered prices
+```
+
+Key design decisions:
+
+| Decision | v2.1 (old) | v2.2 (new) |
+|----------|-----------|-----------|
+| Discovery channels | 3: llama + hermes CLI + cloud_models | 1: Hermes config.yaml only |
+| Local/cloud detection | Hardcoded provider name check (`llamacpp`) | URL-based (`localhost/127.0.0.1` = local) |
+| Role discovery | None (name-based tag heuristics) | Full Hermes config scan (auxiliary/tts/stt/fallback) |
+| Pricing | Static module-level dicts | `PricingTable` with cache file + update API |
+| Model metadata query | Per-provider /v1/models | Same, with llamacpp fallback |
+
+##### Local/Cloud Detection
+
+```
+from kafed.finder.explorer import _is_local_url
+
+_is_local_url("http://localhost:8000/v1")     → True
+_is_local_url("http://127.0.0.1:11434")       → True
+_is_local_url("https://api.deepseek.com")     → False
+_is_local_url("http://192.168.1.100:8000")    → False
+```
+
+##### Role Discovery
+
+Explorer walks all Hermes config sections to discover which roles each model serves:
+
+| Config section | Example | Role tag |
+|---------------|---------|----------|
+| `model.default` | `deepseek-v4-flash` | `default` |
+| `fallback_model.model` | `leader` | `fallback` |
+| `auxiliary.vision.model` | `deepseek-v4-flash` | `vision` |
+| `auxiliary.compression.model` | `worker_sm2` | `compression` |
+| `auxiliary.title_generation.model` | `worker_md1` | `title_generation` |
+| `auxiliary.session_search.model` | `worker_sm1` | `session_search` |
+| `auxiliary.web_extract.model` | `worker_sm1` | `web_extract` |
+| `tts.*.model / model_id` | `gpt-4o-mini-tts` | `tts` |
+| `stt.*.model / model_id` | `base` | `stt` |
+
+A model can serve multiple roles (e.g., `deepseek-v4-flash` = `default` + `vision`). Roles are stored as both `meta.roles` (list of dicts, full config) and `meta.role_tags` (comma-separated string for embedding filtering).
+
+##### Dynamic PricingTable
+
+`Explorer.PricingTable` replaces module-level static pricing dicts:
+
+```
+Priority chain:
+  pricing_cache.json  >  _BUILTIN_PRICING (code fallback)  >  _DEFAULT_CLOUD_COST ($5/$15)
+
+Cache file: ~/.kafed/pricing_cache.json (KAFED_PRICING_CACHE env to override)
+
+Update API:
+  pt = Explorer.PricingTable()    # auto-load from cache
+  pt.set(provider, model, input, output)     # add/override
+  pt.set_provider_default(provider, i, o)    # provider-level default
+  pt.remove(provider, model)                 # revert to builtin
+  pt.save()                                  # persist to cache
+```
+
+Each `Explorer.scan_all()` call loads pricing from cache at start and saves at end.
+Unknown cloud models default to $5/$15 per 1M tokens (conservative — overestimates to prevent under-cost routing).
+
+##### Model Metadata Schema (`finder/matcher.py`)
+
+```
+MODEL_META_SCHEMA = {
+    # Identity
+    "name": (str, ""), "provider": (str, "local"), "model_id": (str, ""),
+    # Capacity
+    "context_window": (int, 16384), "max_tokens": (int, 0),
+    # Generation defaults
+    "temperature": (float, 0.6), "top_p": (float, 0.9),
+    "top_k": (int, 40), "repeat_penalty": (float, 1.1),
+    # Capabilities
+    "supports_reasoning": (bool, False), "supports_vision": (bool, False),
+    "supports_functions": (bool, False), "supports_streaming": (bool, True),
+    "supports_json_mode": (bool, False),
+    # Performance & Cost ($/1M tokens)
+    "tps": (int, 0),
+    "cost_per_input_token": (float, 0.0),   # $/1M input tokens
+    "cost_per_output_token": (float, 0.0),  # $/1M output tokens
+    # Knowledge
+    "knowledge_cutoff": (str, ""),
+    # Role tags
+    "role_tags": (str, ""),        # comma-separated for embedding filtering
+    "provider_type": (str, "cloud"),  # local / cloud / on-prem
+    # Status
+    "is_online": (bool, True),
+}
+```
+
+All matching, filtering, and sorting happens in embedding space — no field-by-field hardcoded comparisons. New schema fields automatically participate through `build_meta_description()` which generates the embedding text.
+
+#### Heartbeat (`finder/heartbeat.py`)
+
+The Heartbeat is not a daemon — it's a cron-driven probe cycle:
+
+```
+cron (every 2min) → run_tick()
+  ├─ Heartbeat.tick()
+  │    ├─ registry.load() → worker_names
+  │    ├─ for each name:
+  │    │    ├─ need_probe() → check freshness + next_probe_at + force_probe
+  │    │    └─ _probe_one(name, provider) → StatusEntry
+  │    └─ cache.save()
+  └─ force_probe(name) — sync call from Router
+```
+
+Two probe modes:
+
+| Mode | Health check | TPS | Latency |
+|------|-------------|-----|---------|
+| Local (llama-server) | `curl /health` | Short /v1/completions | RTT |
+| Cloud (API) | TCP connect to base_url | Historical estimate | RTT |
+
+**Forgetting Curve** — `status_vector` property in `StatusEntry` does not return a raw snapshot. It interpolates between fresh values and neutral defaults based on exponential freshness decay:
+
+```python
+freshness = exp(-decay_rate × elapsed_s)    # 1.0 = just probed, 0.0 = stale
+vector[i] = fresh_value × freshness + stale_default × (1 - freshness)
+```
+
+| Dimension | Fresh value | Stale default (uncertain) |
+|-----------|------------|--------------------------|
+| online | 1.0 / 0.0 | 0.5 (unknown) |
+| tps_norm | min(1.0, tps/200) | 0.0 (no assumption) |
+| load | actual 0.0–1.0 | 0.5 (unknown) |
+| latency_ms | actual ms | 1000ms (pessimistic) |
+
+Result: a model that hasn't been probed in 60s has `sta_score ≈ 0.35` in routing, causing it to naturally sink below freshly probed models — without explicit eviction logic.
+
+**Backoff scheduling** uses exponential backoff with change detection:
+
+```python
+delay = base × 2^backoff_level  # cap at max
+# base = 10s (local) or 60s (cloud)
+# max = 120s (local) or 600s (cloud)
+```
+
+State unchanged → `backoff_level++` → probe less frequently.
+State changed → `backoff_level = 0` → probe again soon.
 
 ### 4.3 Executor Layer
 
@@ -196,7 +376,15 @@ State machine: `Pending → Ready → Running → Completed / Failed`
 Three execution modes:
 1. **Script** — `sh:` prefix → subprocess shell
 2. **Function** — `fn:` prefix → Python callable
-3. **LLM task** — natural language → `dispatch_for()` generates delegate_task params
+3. **LLM task** — natural language → `delegate_to_subagent()` generates Hermes-format params:
+   ```python
+   {"model": "deepseek-v4-flash",
+    "provider": "deepseek",
+    "params": {"temperature": 0.0, "top_p": 0.9}}
+   ```
+   The Dispatcher does not call models directly — it produces parameters in Hermes' standard format. The Agent (LLM) calls `delegate_task()` with these params.
+
+`dispatch_for()` bridges Finder → Executor: it takes the model selected by `find_partners()` and generates a complete Hermes delegate_task config with generation parameters from the model's metadata schema.
 
 #### Engine (`executor/engine.py`)
 
@@ -232,6 +420,20 @@ Knowledge base health checks:
 - `soft=True` enables cross-domain expansion when boundary confidence is low
 - Results include metadata: domain, level, type, source, confidence
 
+#### ContextProvider (`knowledge/context/context_provider.py`)
+
+Pre-EVAL knowledge recall — all sources use **embedding matching** (no keyword extraction):
+
+| Source | Match method | KAFED role |
+|--------|-------------|-----------|
+| RAG (Chroma) | Embedding cosine similarity | Primary recall channel |
+| Wiki | Embedding cosine similarity (domain filter) | Same store, domain-tagged |
+| Memory | Hermes CLI query + embedding | Read-only, Agent-managed |
+| Sessions | Hermes CLI query + embedding | Read-only, Agent-managed |
+| Skills | Hermes CLI query + embedding | Read-only, Agent-managed |
+
+The query embedding vector is included in the ContextBundle so the calling Agent can do its own embedding matching against Memory/Session/Skill stores that only the Agent can access.
+
 #### Classification (`knowledge/classify/`)
 
 Three-tier hierarchical classifier:
@@ -262,7 +464,71 @@ All three tiers use the same `Entity + Registry` architecture:
 
 ---
 
-## 5. Configuration System
+## 5. Cron Schedule
+
+Three KAFED-managed cron jobs (registered by bootstrap):
+
+| Job | Schedule | What it does | Depends on |
+|-----|----------|-------------|------------|
+| `kafed-heartbeat` | `*/2 * * * *` | Probes model health, updates status_cache.pkl with freshness decay | Hermes cron (any OS) |
+| `kafed-explorer` | `0 4 * * *` | Discovers models from Hermes config, updates worker_vectors.pkl + pricing_cache.json | Hermes cron (any OS) |
+| `kafed-centroids` | `0 3 * * 0` | Rebuilds knowledge domain centroids | Hermes cron, data present |
+| `kafed-pulse` (WSL) | `*/15 * * * *` | Conditional task scheduler — checks all registered tasks, runs due ones | WSL + Hermes cron |
+
+All cron jobs use `no_agent` mode (script stdout delivered directly), consuming zero LLM tokens.
+
+### Refresh Cycle Architecture
+
+```
+                   Explorer (daily 4am)
+                   ┌──────────────────────────┐
+                   │  Hermes config → models   │
+                   │  Pricing cache → costs     │
+                   │  /v1/models → metadata     │
+                   └────────┬─────────────────┘
+                            │ worker_vectors.pkl (full overwrite)
+                            ▼
+                   Router._vectors (loaded on demand)
+
+                   Heartbeat (every 2min)
+                   ┌──────────────────────────┐
+                   │  need_probe() → probe     │
+                   │  freshness decay apply     │
+                   │  status_vector updated     │
+                   └────────┬─────────────────┘
+                            │ status_cache.pkl (per-entry update)
+                            ▼
+                   Registry.verify_candidates (zero I/O)
+```
+
+---
+
+## 6. Bootstrap & Installation
+
+### One-Command Install
+
+```bash
+bash scripts/kafed-bootstrap.sh
+# or: pip install -e . && kafed-bootstrap
+```
+
+### Bootstrap Phases
+
+| Phase | What happens | Auto-detects |
+|-------|-------------|-------------|
+| 1: Environment | Hermes venv, WSL, GPU, llama-server, providers | All passive scans |
+| 2: Config | Generate `~/.kafed/kafed.yaml` with detected values | llama URL, GPU, provider list |
+| 3: Data init | Create dirs + initialize ChromaDB + Explorer vectors + centroids | Embedding model auto-download |
+| 4: Cron | Register heartbeat (2min) + explorer (4am) + centroids (weekly) + pulse (WSL) | Hermes available |
+| 5: Install | `pip install -e .` into Hermes venv (default) or standalone | Hermes venv path |
+
+### Default Install Target
+
+KAFED prefers installing **into Hermes' existing venv** (`$HERMES_HOME/.venv`) to avoid duplicate dependency overhead. Falls back to standalone `.venv` only when Hermes is not detected. This is determined by the bootstrap at install time, not a compile-time flag.
+
+---
+
+## 7. Configuration System
 
 ### Priority Chain
 
@@ -274,16 +540,19 @@ Environment variables  >  kafed.yaml  >  Code defaults
 
 | Category | Key Properties |
 |----------|----------------|
-| Paths | `data_dir`, `chroma_path`, `roster_path`, `vectors_path`, `backlog_data` |
+| Paths | `data_dir`, `chroma_path`, `vectors_path`, `backlog_data`, `status_cache_path` |
 | Filenames | `centroids_filename`, `labels_filename`, `event_state_filename` |
 | Embedding | `embedding_model` (bge-small-en-v1.5), `embedding_dim` (384) |
 | Chunking | `chunk_max_chars` (500), `chunk_overlap` (50) |
 | Retrieval | `top_k_default` (5) |
 | Flywheel | `e1_thresholds`, `e2_drift_min`, `e3_repack_growth_pct`, `e4_dedup_threshold`, `e5_stale_days` |
 | Finder | `fast_route_max_workers` (3), `finder_w_cap/ctx/sta` (0.5/0.3/0.2) |
+| llama-server | `llama_base_url` (env: `KAFED_LLAMA_BASE_URL`, yaml: `llama_server.base_url`) |
 | Heartbeat | `heartbeat_base_local/cloud`, `heartbeat_max_local/cloud`, `freshness_threshold` |
 | Server | `host` (0.0.0.0), `port` (8765 — legacy) |
-| Cloud | `cloud_models` — pre-registered model definitions |
+| Cloud | `cloud_models` — pre-registered model definitions with real pricing |
+| Pricing cache | `~/.kafed/pricing_cache.json` (env: `KAFED_PRICING_CACHE`) |
+| Roster | `roster_path` — **deprecated** (kept for backward compat, not written) |
 
 ### Secrets (`KafedSecrets`)
 
@@ -294,7 +563,7 @@ API keys are managed separately via `KafedSecrets`:
 
 ---
 
-## 6. Knowledge Lifecycle
+## 8. Knowledge Lifecycle
 
 ```
 1. Ingestion
@@ -324,11 +593,11 @@ Import: `python -m kafed.kpak unpack <domain.kpak>`
 
 ---
 
-## 7. Testing & Quality
+## 9. Testing & Quality
 
 ### Test Suite
 
-36 tests across 7 test files covering:
+45 tests across 7 test files covering:
 - Pipeline orchestration (DAG scheduler, step tracking)
 - Knowledge operations (chunking, quality filtering, classification integration)
 - RAG engine (end-to-end retrieval validation)
@@ -344,4 +613,4 @@ Each software change follows:
 
 ---
 
-*KAFED — Knowledge Agent Framework for Embedded Data · v2.1.0 · MIT License*
+*KAFED — Knowledge Agent Framework for Embedded Data · v2.2.0 · MIT License*

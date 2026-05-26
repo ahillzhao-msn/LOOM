@@ -48,15 +48,49 @@ class StatusEntry:
 
     @property
     def status_vector(self) -> list[float]:
-        """4 維向量 [online, tps_norm, load_norm, latency_ms]。
-        
-        與 find_partners 三維聚合相容（前 3 維 + latency 擴充）。
+        """4 維向量 [online, tps_norm, load_norm, latency_ms] —— freshness 衰減版本。
+
+        當 freshness 下降時，各維度平滑過渡到不確定默認值，
+        使路由在信息過期時自然降低對該模型的偏好。
+
+        默認值（stale）：
+          online=0.5  (不確定是否在線)
+          tps=0.0     (不假設速度)
+          load=0.5    (不假設負載)
+          latency=1000ms (悲觀估計)
+
+        新鮮值:  freshness=1.0 → 用實測值
+        過期值:  freshness=0.0 → 用不確定默認值
+        中間:    線性插值
         """
-        tps_norm = min(1.0, self.tps / 200.0) if self.tps > 0 else 0.0
-        return [1.0 if self.online else 0.0,
-                round(tps_norm, 4),
-                round(self.load, 4),
-                round(self.latency_ms, 2)]
+        now = time.time()
+        elapsed = now - self.last_probe_at if self.last_probe_at > 0 else 9999
+        fresh = math.exp(-self.decay_rate * elapsed) if elapsed > 0 else 1.0
+
+        # 新鮮值
+        fresh_online = 1.0 if self.online else 0.0
+        fresh_tps = min(1.0, self.tps / 200.0) if self.tps > 0 else 0.0
+        fresh_load = self.load
+        fresh_lat = self.latency_ms
+
+        # 不確定默認值（stale 時的回落點）
+        stale_online = 0.5
+        stale_tps = 0.0
+        stale_load = 0.5
+        stale_lat = 1000.0
+
+        # 按 freshness 插值
+        online_val = fresh_online * fresh + stale_online * (1 - fresh)
+        tps_val = fresh_tps * fresh + stale_tps * (1 - fresh)
+        load_val = fresh_load * fresh + stale_load * (1 - fresh)
+        lat_val = fresh_lat * fresh + stale_lat * (1 - fresh)
+
+        return [
+            round(online_val, 4),
+            round(tps_val, 4),
+            round(load_val, 4),
+            round(lat_val, 2),
+        ]
 
 
 def compute_freshness(decay_rate: float, elapsed_s: float) -> float:

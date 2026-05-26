@@ -132,6 +132,7 @@ class Dispatcher:
         toolsets: list[str] | None = None,
         task_id: str = "delegate",
         kafed_root: str | None = None,
+        generation_params: dict | None = None,
     ) -> DispatchResult:
         """準備子代理委託參數。
 
@@ -195,10 +196,14 @@ class Dispatcher:
             "task_id": task_id,
         }
         if model_name:
-            delegate_params["model"] = {
-                "provider": model_provider,
+            model_config = {
+                "provider": model_provider or "",
                 "model": model_name,
             }
+            # 若有 generation_params，注入 params 子字段（Hermes 標準格式）
+            if generation_params:
+                model_config["params"] = generation_params
+            delegate_params["model"] = model_config
 
         elapsed = (time.time() - start) * 1000
         import json as _json
@@ -214,8 +219,21 @@ class Dispatcher:
     @staticmethod
     def dispatch_for(model_name: str = "", model_provider: str = "",
                      goal: str = "", context: str = "",
-                     task_id: str = "dispatch") -> DispatchResult:
-        """Finder 選中模型 → delegate_task 參數。"""
+                     task_id: str = "dispatch",
+                     generation_params: Optional[dict] = None) -> DispatchResult:
+        """Finder 選中模型 → delegate_task 參數。
+
+        model_name/model_provider 使用 Hermes 標準格式：
+            {"model": model_name, "provider": model_provider}
+
+        Args:
+            model_name: Hermes 模型名（如 deepseek-v4-flash）
+            model_provider: Hermes provider 名（如 deepseek）
+            goal: 子代理目標
+            context: 額外上下文
+            task_id: 任務標識
+            generation_params: 可選生成參數 (temperature, top_p, top_k 等)
+        """
         return Dispatcher.delegate_to_subagent(
             goal=goal, context=context,
             model_name=model_name, model_provider=model_provider,

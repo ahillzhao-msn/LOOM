@@ -9,7 +9,7 @@
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10+-blue.svg">
   <img alt="Chunks" src="https://img.shields.io/badge/Chunks-93K+-green.svg">
   <img alt="Domains" src="https://img.shields.io/badge/Domains-38-purple.svg">
-  <img alt="Version" src="https://img.shields.io/badge/Version-2.1.0-red.svg">
+  <img alt="Version" src="https://img.shields.io/badge/Version-2.2.0-red.svg">
 </p>
 
 ---
@@ -90,25 +90,72 @@ KAFED treats knowledge as a **living system**. The 5-layer flywheel provides:
 
 ## Quick Start
 
+### One-command install (recommended)
+
 ```bash
 # Clone
 git clone https://github.com/ahillzhao-msn/KAFED.git
 cd KAFED
 
-# Install (creates venv + installs dependencies)
-bash setup.sh
+# One-command bootstrap — detects environment, generates config, inits modules, installs cron
+bash scripts/kafed-bootstrap.sh
 
-# Download embedding model (optional, auto-downloads on first query)
-bash scripts/download_models.sh
-
-# Configure
-cp kafed.yaml.example kafed.yaml   # Edit paths, thresholds
-cp .env.example .env                # Fill in API keys
-
-# Activate and verify
-source .venv/bin/activate
-python -c "from kafed.config import get_config; print(get_config().show())"
+# Or if KAFED is already pip-installed:
+kafed-bootstrap
 ```
+
+The bootstrap auto-detects:
+- **Hermes** venv — installs directly into it (no duplicate deps)
+- **WSL** — deploys pulse-manager for conditional cron execution
+- **GPU** — enables CUDA embedding acceleration
+- **llama-server** — auto-discovers base URL and port
+- **Existing Hermes providers** — auto-generates cloud model list
+
+After bootstrap, verify:
+
+```bash
+# Check configuration
+python3 -c "from kafed.config import get_config; print(get_config().show())"
+
+# Start heartbeat (cron registered automatically)
+kafed-heartbeat
+
+# Scan available models
+kafed-explore
+```
+
+### Manual install
+
+```bash
+# Install into Hermes venv (preferred)
+hermes venv python3 -m pip install -e .
+
+# Or standalone venv
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+# Generate config (auto-adapts to environment)
+python3 -m kafed.install.bootstrap --auto
+
+# Or manually copy and edit
+cp kafed.yaml.example ~/.kafed/kafed.yaml
+cp .env.example ~/.kafed/.env
+```
+
+### What gets initialized
+
+| Component | What happens | Trigger |
+|-----------|-------------|---------|
+| **Config** | Environment-adapted `~/.kafed/kafed.yaml` | Bootstrap Phase 2 |
+| **Directories** | `data/chroma`, `feedback_logs`, `kpak`, logs | Bootstrap Phase 3 |
+| **ChromaDB** | PersistentClient + collection creation | Bootstrap Phase 3 |
+| **Explorer** | `llama-server` + `hermes config` + cloud model scan | Bootstrap Phase 3 |
+| **Vector space** | Embedding-based worker vectors | Bootstrap Phase 3 |
+| **Heartbeat cron** | Every 2min model status probing | Bootstrap Phase 4 |
+| **Explorer cron** | Daily 4am model vector + pricing refresh | Bootstrap Phase 4 |
+| **Centroid rebuild** | Weekly Sunday 3am | Bootstrap Phase 4 |
+| **Pulse (WSL)** | 15min conditional task scheduler | Bootstrap Phase 4 |
 
 ### Basic Usage
 
@@ -213,9 +260,10 @@ KAFED/
 │   │   ├── quality/        — Document quality scoring
 │   │   └── flywheel/       — Event-driven self-check (E1-E5)
 │   ├── kpak/               — Knowledge package export/import
+│   ├── install/            — Bootstrap & environment detection
 │   └── client/             — CLI + FlowVisualizer
-├── scripts/                — Utility scripts
-├── tests/                  — pytest suite (36 tests)
+├── scripts/                — Utility scripts + bootstrap
+├── tests/                  — pytest suite (45 tests)
 ├── templates/              — SOUL cognitive architecture templates
 ├── kafed.yaml.example      — Configuration template
 ├── .env.example            — Secrets template

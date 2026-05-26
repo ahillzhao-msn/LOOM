@@ -281,9 +281,11 @@ class Router:
 
         # 2. llama-server /v1/models
         try:
+            from kafed.config import get_config
+            llama_url = f"{get_config().llama_base_url}/v1/models"
             r = subprocess.run(
                 ["curl", "-s", "--connect-timeout", "3",
-                 "http://localhost:8000/v1/models"],
+                 llama_url],
                 capture_output=True, text=True, timeout=5,
             )
             if r.returncode == 0:
@@ -294,7 +296,6 @@ class Router:
                         workers.append(WorkerCandidate(
                             name=name, provider="local", model_id=name,
                             match_score=0.7, is_free=True, is_online=True,
-                            estimated_tps=55,
                         ))
         except Exception:
             pass

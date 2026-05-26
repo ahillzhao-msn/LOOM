@@ -219,6 +219,7 @@ class KafedConfig:
     # Finder 路徑
     @property
     def roster_path(self) -> Path:
+        """[已棄用] roster.yaml 已由向量空間取代。保留僅為向後兼容。"""
         return self._path("KAFED_ROSTER_PATH", ("finder", "roster_path"),
                           str(_HOME / ".kafed" / "roster.yaml"))
 
@@ -373,6 +374,16 @@ class KafedConfig:
         return self._float("KAFED_HEARTBEAT_FRESHNESS_THRESHOLD", ("finder", "freshness_threshold"), 0.3)
 
     @property
+    def heartbeat_cron_name(self) -> str:
+        return "kafed-heartbeat"
+
+    @property
+    def llama_base_url(self) -> str:
+        """llama-server 基礎 URL（可通過 KAFED_LLAMA_BASE_URL 或 YAML llama_server.base_url 覆寫）。"""
+        return self._str("KAFED_LLAMA_BASE_URL", ("llama_server", "base_url"),
+                         "http://localhost:8000")
+
+    @property
     def context_buffer_size(self) -> int:
         return self._int("KAFED_CONTEXT_BUFFER_SIZE", ("finder", "context_buffer_size"), 500)
 
@@ -394,17 +405,26 @@ class KafedConfig:
     def cloud_models(self) -> list[dict]:
         return self._list(("cloud_models",), [
             {"name": "deepseek-v4-flash", "provider": "deepseek",
-             "is_free": False, "cost": 0.00015, "context_window": 65536,
+             "is_free": False, "cost": 0.00014, "cost_output": 0.00028,
+             "context_window": 65536,
              "supports_reasoning": True, "supports_vision": False,
              "supports_functions": True, "temperature": 0.0,
              "tags": ["reasoning", "coding", "fast"]},
+            {"name": "deepseek-v4-pro", "provider": "deepseek",
+             "is_free": False, "cost": 0.00174, "cost_output": 0.00348,
+             "context_window": 65536,
+             "supports_reasoning": True, "supports_vision": False,
+             "supports_functions": True, "temperature": 0.6,
+             "tags": ["reasoning", "deep"]},
             {"name": "claude-sonnet-4", "provider": "anthropic",
-             "is_free": False, "cost": 0.003, "context_window": 200000,
+             "is_free": False, "cost": 0.003, "cost_output": 0.015,
+             "context_window": 200000,
              "supports_reasoning": True, "supports_vision": True,
              "supports_functions": True, "temperature": 0.6,
              "tags": ["reasoning", "analysis", "long_context"]},
             {"name": "gpt-4o", "provider": "openai",
-             "is_free": False, "cost": 0.0025, "context_window": 128000,
+             "is_free": False, "cost": 0.0025, "cost_output": 0.010,
+             "context_window": 128000,
              "supports_reasoning": False, "supports_vision": True,
              "supports_functions": True, "temperature": 0.6,
              "tags": ["reasoning", "vision", "general"]},

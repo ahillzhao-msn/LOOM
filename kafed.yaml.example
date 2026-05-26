@@ -79,6 +79,9 @@ server:
 #     tags: [reasoning, coding]
 
 # ── 探活端點 ────────────────────────────────────
+# llama_server:
+#   base_url: http://localhost:8000   # 可被 KAFED_LLAMA_BASE_URL env 覆寫
+
 # health_endpoints:
 #   local: http://localhost:8000/health
 #   deepseek: https://api.deepseek.com/v1

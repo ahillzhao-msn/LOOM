@@ -24,11 +24,14 @@ from kafed.knowledge.rag.vector_store import VectorStore
 from kafed.knowledge.classify.sub_registry import (
     get_level_registry, get_type_registry,
 )
-from kafed.knowledge.classify.embedding_space import name_to_uuid
-
-LLAMA_API = "http://localhost:8000/v1/chat/completions"
+# ── LLM 命名 ─────────────────────────────────
+from kafed.config import get_config
+_cfg = get_config()
+LLAMA_API = f"{_cfg.llama_base_url}/v1/chat/completions"
 LLAMA_MODEL = "leader"
-LLAMA_KEY = "hermes-local"
+LLAMA_KEY = "hermes-local"  # Qwen3.5-9B
+
+from kafed.knowledge.classify.embedding_space import name_to_uuid
 
 LEVEL_PROMPT = """You are analyzing a sub-cluster (Level) within a larger knowledge domain. Each Level represents a distinct subtopic or depth-layer within the domain.
 

@@ -35,7 +35,8 @@ def main() -> None:
 
     # scan
     s = sub.add_parser("scan", help="掃描模型列表")
-    s.add_argument("--update-roster", action="store_true", help="更新 roster + 向量空間")
+    s.add_argument("--update-roster", action="store_true",
+                    help="[已棄用] 不再寫入 roster.yaml（向量空間已取代）")
 
     # feedback
     f = sub.add_parser("feedback", help="反饋評分")

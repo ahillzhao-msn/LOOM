@@ -32,10 +32,9 @@ from kafed.knowledge.classify.domain_registry import DomainRegistry
 # Unbuffer stdout
 sys.stdout.reconfigure(line_buffering=True)
 
-
-# ── LLM 命名 ─────────────────────────────────
-
-LLAMA_API = "http://localhost:8000/v1/chat/completions"
+from kafed.config import get_config
+_cfg = get_config()
+LLAMA_API = f"{_cfg.llama_base_url}/v1/chat/completions"
 LLAMA_MODEL = "leader"
 LLAMA_KEY = "hermes-local"  # Qwen3.5-9B
 

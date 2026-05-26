@@ -37,13 +37,24 @@ MODEL_META_SCHEMA = {
     "supports_reasoning": (bool, False),    # 推理能力
     "supports_vision":    (bool, False),    # 視覺輸入
     "supports_functions": (bool, False),    # 工具調用
+    "supports_streaming": (bool, True),     # 流式輸出
+    "supports_json_mode": (bool, False),    # JSON 模式
 
     # ── 性能與成本 ──
     "tps":            (int,   0),           # tokens/秒 (估算)
-    "cost_per_token": (float, 0.0),         # USD/token (本地=0)
+    "cost_per_input_token":  (float, 0.0),  # $/1K input tokens
+    "cost_per_output_token": (float, 0.0),  # $/1K output tokens
+    "cost_per_token": (float, 0.0),         # $/token (向後兼容, deprecated)
+
+    # ── 知識邊界 ──
+    "knowledge_cutoff": (str, ""),          # 知識截止日期
+
+    # ── 角色/用途標籤 ──
+    "role_tags":      (str, ""),            # 逗號分隔角色標籤 (coding, analysis, vision, fast)
+    "provider_type":  (str, "cloud"),       # local / cloud / on-prem
 
     # ── 狀態 ──
-    "is_online":      (bool,  True),
+    "is_online":      (bool, True),
 }
 
 

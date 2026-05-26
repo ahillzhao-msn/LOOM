@@ -114,6 +114,11 @@ class Heartbeat:
         TPS 使用 /v1/completions 發一個短請求計時。
         失敗時返回 0。
         """
+        from kafed.config import get_config
+        base_url = get_config().llama_base_url
+        health_url = f"{base_url}/health"
+        completions_url = f"{base_url}/v1/completions"
+
         start = time.time()
         online = False
         tps = 0.0
@@ -123,7 +128,7 @@ class Heartbeat:
             r = subprocess.run(
                 ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
                  "--connect-timeout", "2", "--max-time", "3",
-                 "http://localhost:8000/health"],
+                 health_url],
                 capture_output=True, text=True, timeout=5,
             )
             online = r.stdout.strip().startswith("2")
@@ -143,7 +148,7 @@ class Heartbeat:
             })
             r2 = subprocess.run(
                 ["curl", "-s", "--connect-timeout", "3", "--max-time", "8",
-                 "-X", "POST", "http://localhost:8000/v1/completions",
+                 "-X", "POST", completions_url,
                  "-H", "Content-Type: application/json",
                  "-d", payload],
                 capture_output=True, text=True, timeout=10,
@@ -185,18 +190,36 @@ class Heartbeat:
         """雲端 provider 探測：TCP 可達性 + RTT。
 
         不發送認證請求（避免消耗計費 API call）。
+        端點從 KAFED config 的 providers 獲取。
         """
         start = time.time()
-        try:
-            endpoint = self._registry._health_endpoints().get(provider)
-            if not endpoint:
-                return {"online": True, "latency_ms": 0.0, "tps": 0.0}
 
+        # 從 config 查找 provider base_url
+        from kafed.config import get_config
+        cfg = get_config()
+        providers_cfg = getattr(cfg, "providers", {}) or {}
+        base_url = None
+        if isinstance(providers_cfg, dict) and provider in providers_cfg:
+            base_url = providers_cfg[provider].get("base_url", "")
+        if not base_url:
+            known_endpoints = {
+                "deepseek": "https://api.deepseek.com",
+                "openai": "https://api.openai.com",
+                "anthropic": "https://api.anthropic.com",
+                "openrouter": "https://openrouter.ai",
+            }
+            base_url = known_endpoints.get(provider, "")
+
+        if not base_url:
+            return {"online": True, "latency_ms": 0.0, "tps": 0.0}
+
+        # TCP 可達性探測
+        online = False
+        try:
             from urllib.parse import urlparse
-            parsed = urlparse(endpoint)
+            parsed = urlparse(base_url)
             host = parsed.hostname or ""
             port = parsed.port or (443 if parsed.scheme == "https" else 80)
-
             import socket
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(3)
@@ -229,6 +252,39 @@ def run_tick():
     hb = Heartbeat()
     n = hb.tick()
     print(f"heartbeat: {n} models probed")
+
+
+def ensure_running():
+    """確保 Heartbeat cron 任務已註冊（安裝時自動調用）。"""
+    from kafed.config import get_config
+    cfg = get_config()
+    cron_name = cfg.heartbeat_cron_name  # "kafed-heartbeat"
+
+    try:
+        result = subprocess.run(
+            ["hermes", "cron", "list"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if cron_name in result.stdout:
+            print(f"heartbeat: cron '{cron_name}' already registered")
+            return
+
+        subprocess.run(
+            ["hermes", "cron", "create",
+             "--name", cron_name,
+             "--schedule", "*/2 * * * *",
+             "--script", "python3 -m kafed.finder.heartbeat",
+             ],
+            capture_output=True, text=True, timeout=10,
+        )
+        print(f"heartbeat: cron '{cron_name}' registered (every 2 min)")
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+        print(f"heartbeat: could not auto-register cron: {e}")
+
+
+if __name__ == "__main__":
+    ensure_running()
+    run_tick()
 
 
 def force_probe(name: str, provider: str = "local"):
