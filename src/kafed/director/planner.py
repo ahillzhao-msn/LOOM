@@ -75,7 +75,7 @@ class TaskPlan:
     eval_score: Optional[Any] = None     # EvalScore 實例
     
     # 戰略取向
-    strategy: Optional[Any] = None       # StrategyDecision 實例
+    strategy: Optional[Any] = None
     
     # 元數據
     created_at: Optional[str] = None

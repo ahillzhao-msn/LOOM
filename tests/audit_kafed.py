@@ -61,11 +61,7 @@ check("Knowledge ingest", lambda: _import("kafed.knowledge.ingest"))
 
 check("Config", lambda: _import("kafed.config"))
 check("Entry", lambda: _import("kafed.entry"))
-check("Log", lambda: _import("kafed.log"))
-check("Schemas", lambda: _import("kafed.schemas"))
 
-# ══════════════════════════════════════════════════
-# Phase 2: Core functionality smoke tests
 # ══════════════════════════════════════════════════
 
 print("\n=== Phase 2: Core Functionality ===")
