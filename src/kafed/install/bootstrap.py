@@ -665,6 +665,40 @@ def install_into_hermes(hermes_info: dict, project_root: str) -> bool:
 # ══════════════════════════════════════════════════
 
 
+# ══════════════════════════════════════════════════
+# Hermes 工具集成
+# ══════════════════════════════════════════════════
+
+
+def _install_kafed_tool_symlink(hermes_available: bool):
+    """創建 KAFED Hermes tool symlink（軟性——失敗不中斷）。
+
+    將 src/kafed/client/kafed_tool.py 鏈接到 Hermes tools/ 目錄，
+    使 kafed_query / kafed_ingest / kafed_status / kafed_classify 可用。
+    """
+    if not hermes_available:
+        print("  · KAFED tool: Hermes not available, skip")
+        return
+
+    project_root = Path(__file__).resolve().parent.parent.parent.parent  # src/ → project root
+    tool_src = project_root / "src" / "kafed" / "client" / "kafed_tool.py"
+    if not tool_src.exists():
+        print("  · kafed_tool.py not found, skip Hermes integration")
+        return
+
+    hermes_home = os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))
+    tool_dst = Path(hermes_home) / "hermes-agent" / "tools" / "kafed_tool.py"
+    tool_dst.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if tool_dst.exists() or tool_dst.is_symlink():
+            tool_dst.unlink()
+        tool_dst.symlink_to(str(tool_src))
+        print(f"  ✓ KAFED tool linked: {tool_dst}")
+    except Exception as e:
+        print(f"  ⚠ KAFED tool link failed: {e}")
+
+
 def _install_yicenet_soft(target_python: str = ""):
     """安裝 YiCeNet 依賴（軟性——失敗繼續不中斷）。
 
@@ -795,6 +829,9 @@ def bootstrap(auto: bool = False, hermes: bool = False,
                 # future: standalone venv creation
         elif venv:
             print("  → Standalone venv install (future)")
+
+        # KAFED Hermes tool symlink (optional)
+        _install_kafed_tool_symlink(hermes_info.get("available", False))
         print()
     else:
         print("── Phase 5: Install (skipped) ──")
