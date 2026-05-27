@@ -150,14 +150,19 @@ class PipelineRunner:
     3. complete() / skip() → 報告完成
 
     不走完 non-optional steps，done() 不會返回 True。
+
+    校驗：complete() 和 skip() 只接受 next_step() 返回的當前步驟。
+    直接 complete 非當前步驟會拋 ValueError。
     """
 
     def __init__(self, pipeline: Pipeline):
         self.pipeline = pipeline
         self._records = {s.step_id: StepRecord(s) for s in pipeline.steps}
+        self._current_step_id: Optional[str] = None  # next_step() 返回的當前步驟
 
     def next_step(self) -> Optional[PipelineStep]:
         """返回第一個就緒的未完成步驟，或 None（全部完成）。"""
+        # 上一步若未標記完成，自動完成（兼容模式）
         done_ids = {sid for sid, r in self._records.items()
                     if r.status in (StepStatus.DONE, StepStatus.SKIPPED)}
         for step in self.pipeline.steps:
@@ -166,22 +171,34 @@ class PipelineRunner:
                 # 檢查依賴
                 if all(d in done_ids for d in step.depends_on):
                     rec.status = StepStatus.RUNNING
+                    self._current_step_id = step.step_id
                     return step
                 else:
                     rec.status = StepStatus.BLOCKED
+        self._current_step_id = None
         return None
 
     def complete(self, step_id: str, result: Any = None, note: str = "") -> None:
-        """標記步驟完成。"""
+        """標記步驟完成。僅接受 next_step() 返回的當前步驟。"""
+        if step_id != self._current_step_id:
+            raise ValueError(
+                f"不可 complete '{step_id}'：當前步驟是 '{self._current_step_id}'。"
+                f"必須對 next_step() 返回的步驟調用 complete()。"
+            )
         rec = self._records.get(step_id)
         if rec is None:
             raise ValueError(f"未知步驟: {step_id}")
         rec.status = StepStatus.DONE
         rec.result = result
         rec.note = note
+        self._current_step_id = None
 
     def skip(self, step_id: str, note: str = "") -> None:
-        """跳過可選步驟。"""
+        """跳過可選步驟。僅接受 next_step() 返回的當前步驟。"""
+        if step_id != self._current_step_id:
+            raise ValueError(
+                f"不可 skip '{step_id}'：當前步驟是 '{self._current_step_id}'。"
+            )
         rec = self._records.get(step_id)
         if rec is None:
             raise ValueError(f"未知步驟: {step_id}")
@@ -189,6 +206,7 @@ class PipelineRunner:
             raise ValueError(f"不可跳過 non-optional 步驟: {step_id}")
         rec.status = StepStatus.SKIPPED
         rec.note = note
+        self._current_step_id = None
 
     def done(self) -> bool:
         """所有步驟（含 optional）都走到了終態 (done / skipped)？"""

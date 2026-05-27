@@ -147,6 +147,8 @@ if registry is not None:
         except ImportError:
             return False
 
+    # ── Existing tools: query / ingest / status / classify ──
+
     registry.register(
         name="kafed_query",
         toolset="kafed",
@@ -263,6 +265,204 @@ if registry is not None:
         handler=lambda args, **kw: kafed_classify(
             text=args.get("text", ""),
         ),
+        check_fn=_check_kafed,
+        requires_env=[],
+    )
+
+    # ── Pipeline tools ────────────────────────
+
+    # Module-level state: 同一 turn 內跨 tool call 共享
+    _PIPELINE_RUNNER = None
+
+    def _pipeline_step_response(step, runner, done_ids, total):
+        """Build response dict for a pipeline step."""
+        if step is None:
+            return json.dumps({
+                "done": True,
+                "report": runner.report(),
+                "completed": done_ids,
+                "total_steps": total,
+            })
+        return json.dumps({
+            "done": False,
+            "step_id": step.step_id,
+            "name": step.name,
+            "optional": step.optional,
+            "depends_on": step.depends_on,
+            "completed": done_ids,
+            "total_steps": total,
+            "report": runner.report(),
+        })
+
+    def _count_done(runner):
+        return sum(1 for r in runner._records.values()
+                   if r.status.name in ("DONE", "SKIPPED"))
+
+    def kafed_pipeline_start(pipeline_name: str = "soul_core") -> str:
+        """Start a new pipeline run. Resets any previous state.
+
+        Args:
+            pipeline_name: Which pipeline to run: soul_core (default), soul_quick, or soul_deep
+        """
+        global _PIPELINE_RUNNER
+        try:
+            from kafed.director.pipeline import SOUL_PIPELINES, PipelineRunner
+            pipe = SOUL_PIPELINES.get(pipeline_name)
+            if not pipe:
+                return json.dumps(
+                    {"error": f"Unknown pipeline: {pipeline_name}. Choose: {list(SOUL_PIPELINES.keys())}"}
+                )
+            _PIPELINE_RUNNER = PipelineRunner(pipe)
+            step = _PIPELINE_RUNNER.next_step()
+            if step is None:
+                return json.dumps({"error": "Pipeline has no steps"})
+            return _pipeline_step_response(
+                step, _PIPELINE_RUNNER, _count_done(_PIPELINE_RUNNER), len(pipe.steps)
+            )
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def kafed_pipeline_complete(result: str = "", note: str = "") -> str:
+        """Complete current pipeline step and advance to next.
+
+        Args:
+            result: Summary of what was done in this step
+            note: Optional note for flow header (defaults to result text)
+        """
+        global _PIPELINE_RUNNER
+        if _PIPELINE_RUNNER is None:
+            return json.dumps({"error": "No pipeline started. Call kafed_pipeline_start first."})
+        if _PIPELINE_RUNNER._current_step_id is None:
+            return json.dumps({"error": "No current step to complete."})
+        step_id = _PIPELINE_RUNNER._current_step_id
+        try:
+            _PIPELINE_RUNNER.complete(step_id, result={"action": result}, note=note or result)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        step = _PIPELINE_RUNNER.next_step()
+        return _pipeline_step_response(
+            step, _PIPELINE_RUNNER, _count_done(_PIPELINE_RUNNER), len(_PIPELINE_RUNNER.pipeline.steps)
+        )
+
+    def kafed_pipeline_skip(note: str = "") -> str:
+        """Skip current optional step and advance. Only works on optional steps."""
+        global _PIPELINE_RUNNER
+        if _PIPELINE_RUNNER is None:
+            return json.dumps({"error": "No pipeline started."})
+        if _PIPELINE_RUNNER._current_step_id is None:
+            return json.dumps({"error": "No current step to skip."})
+        step_id = _PIPELINE_RUNNER._current_step_id
+        try:
+            _PIPELINE_RUNNER.skip(step_id, note=note)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        step = _PIPELINE_RUNNER.next_step()
+        return _pipeline_step_response(
+            step, _PIPELINE_RUNNER, _count_done(_PIPELINE_RUNNER), len(_PIPELINE_RUNNER.pipeline.steps)
+        )
+
+    def kafed_pipeline_status() -> str:
+        """Return current pipeline status and flow report."""
+        global _PIPELINE_RUNNER
+        if _PIPELINE_RUNNER is None:
+            return json.dumps({"pipeline": None, "status": "inactive"})
+        return json.dumps({
+            "pipeline": _PIPELINE_RUNNER.pipeline.id,
+            "current_step": _PIPELINE_RUNNER._current_step_id,
+            "report": _PIPELINE_RUNNER.report(),
+            "done": _PIPELINE_RUNNER.done(),
+            "core_done": _PIPELINE_RUNNER.core_done(),
+        })
+
+    # ── Register pipeline tools ───────────────
+
+    registry.register(
+        name="kafed_pipeline_start",
+        toolset="kafed",
+        schema={
+            "name": "kafed_pipeline_start",
+            "description": "Start a KAFED Pipeline run for this turn. Returns the first step.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pipeline_name": {
+                        "type": "string",
+                        "description": "soul_core (default, 9 steps), soul_quick (6 steps), soul_deep (9 steps)",
+                        "default": "soul_core"
+                    }
+                }
+            }
+        },
+        handler=lambda args, **kw: kafed_pipeline_start(
+            pipeline_name=args.get("pipeline_name", "soul_core"),
+        ),
+        check_fn=_check_kafed,
+        requires_env=[],
+    )
+
+    registry.register(
+        name="kafed_pipeline_complete",
+        toolset="kafed",
+        schema={
+            "name": "kafed_pipeline_complete",
+            "description": "Complete the current pipeline step and advance to the next. Returns next step info.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string",
+                        "description": "Summary of what was done in this step"
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "Optional note for flow header"
+                    }
+                }
+            }
+        },
+        handler=lambda args, **kw: kafed_pipeline_complete(
+            result=args.get("result", ""),
+            note=args.get("note", ""),
+        ),
+        check_fn=_check_kafed,
+        requires_env=[],
+    )
+
+    registry.register(
+        name="kafed_pipeline_skip",
+        toolset="kafed",
+        schema={
+            "name": "kafed_pipeline_skip",
+            "description": "Skip the current optional step and advance. Only works on optional steps (e.g. 編).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note": {
+                        "type": "string",
+                        "description": "Reason for skipping"
+                    }
+                }
+            }
+        },
+        handler=lambda args, **kw: kafed_pipeline_skip(
+            note=args.get("note", ""),
+        ),
+        check_fn=_check_kafed,
+        requires_env=[],
+    )
+
+    registry.register(
+        name="kafed_pipeline_status",
+        toolset="kafed",
+        schema={
+            "name": "kafed_pipeline_status",
+            "description": "Get current pipeline status and flow report.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        handler=lambda args, **kw: kafed_pipeline_status(),
         check_fn=_check_kafed,
         requires_env=[],
     )
