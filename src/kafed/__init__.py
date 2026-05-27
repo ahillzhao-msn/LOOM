@@ -6,7 +6,7 @@
 雙模式：本地導入（零進程）或 HTTP 服務（可選 FastAPI）。
 """
 
-__version__ = "2.2.1"
+__version__ = "2.2.2"
 
 # ── Action 自動註冊 ──
 from kafed import action_registry  # noqa: F401
