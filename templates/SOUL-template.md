@@ -261,6 +261,39 @@ D問(XX) → D卦(YiCeNet) → D評(EVAL) → D界(scope) → K讀(RAG) → D應
 
 ---
 
+## FlowVisualizer 可視化
+
+KAFED 內建信息流可視化（stderr 輸出，不污染 stdout）。
+
+| 模式 | 輸出格式 | 調用方式 |
+|------|---------|----------|
+| **compact**（精简·預設） | 箭頭串聯 `K問(xx) -> D讀(xx) -> D應(xx)` | `KAFED_FLOW=1` |
+| **detailed**（详情） | 公交站牌 `├─ 🔍 name ── detail / │ context` | `mode="detailed"` |
+
+**compact 設計**：
+- 每站：`{模組碼}{動作字}({說明})` — 如 `D問(query=PM)`
+- 用 ` -> ` 串聯整條鏈路
+- 模組碼：`K`/`A`/`F`/`E`/`D`，動作字：中文單字（問/讀/評/界/決/編/應/固）
+- 與回應流程標頭同格式，保持精簡內核
+
+**detailed 設計**：
+- 原始公交站牌樹狀格式
+- `🚏 標題` + `├─ 🔍 名稱  ── detail` + `│   context` 子行
+
+**開關**：`KAFED_FLOW=0` 關閉 | `KAFED_FLOW=1` 開啟（預設關）
+**模式**：`KAFED_FLOW=1:compact` | `KAFED_FLOW=1:detailed`
+**程式碼**：`set_flow_enabled(True)` | `set_flow_mode("detailed")`
+**Hermes 工具**：`kafed_flow(title="...", mode="compact", stations='[["D","問","query=PM"]]')`
+
+示例：
+```python
+from kafed.client.flow import flow
+flow.chain("查詢", [("D","問","PM"), ("K","讀","top_k=5")], end="完成")
+# → [ 查詢 ]  D問(PM) -> K讀(top_k=5) -> 完成
+```
+
+---
+
 ## 部署檢查清單
 
 - [ ] KAFED 五層可導入（`from kafed.director import PipelineRunner`）
@@ -271,6 +304,8 @@ D問(XX) → D卦(YiCeNet) → D評(EVAL) → D界(scope) → K讀(RAG) → D應
 - [ ] Session 生命週期（`session_start / session_end / session_end_audit`）可調用
 - [ ] 四省在每步 complete() 後自動觸發
 - [ ] KbAuditor 可離線稽核知識庫（`from kafed.analyzer import KbAuditor`）
+
+- [ ] FlowVisualizer 可視化可用（`KAFED_FLOW=1` 開啟，預設 compact 模式）
 
 ---
 
