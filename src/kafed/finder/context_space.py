@@ -97,7 +97,7 @@ class ContextSpace:
         self._buffer.append(entry)
         self._save()
 
-        from kafed.client.flow import hop, stop
+        from kafed.flow import hop, stop
         hop("ctx", f"{model_name} {'+' if success else '-'}",
             detail=f"buf={len(self._buffer)}")
 

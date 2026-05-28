@@ -203,7 +203,7 @@ class Router:
 
         返回 Result 構建參數字典（match_method, route_mode, aggregation）。
         """
-        from kafed.client.flow import chain
+        from kafed.flow import chain
         chain("find/route", [
             ("mod", "full", f"cands={len(cands)}"),
         ], end=f"brief={brief[:30]}")
@@ -258,7 +258,7 @@ class Router:
 
     def _discover_fast_workers(self) -> list[WorkerCandidate]:
         """模型池 < 閾值時：跳過嵌入匹配，走 CLI + 即時探活。"""
-        from kafed.client.flow import chain
+        from kafed.flow import chain
         chain("find/route", [("mod", "fast", "")], end="local+config")
 
         workers: list[WorkerCandidate] = []

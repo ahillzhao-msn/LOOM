@@ -674,7 +674,7 @@ def _find_unreferenced_roles(role_map: dict,
 
 def scan(update_roster: bool = False) -> list[WorkerCandidate]:
     """探索所有可用模型。"""
-    from kafed.client.flow import chain
+    from kafed.flow import chain
     workers = Explorer.scan_all()
     chain("find/scan", [
         ("src", "hermes_config", ""),

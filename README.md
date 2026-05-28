@@ -1,276 +1,165 @@
-# KAFED — Knowledge Agent Framework for Embedded Data
+# KAFED v3.0 — Knowledge Agent Framework
 
-> **Five-layer intelligent flywheel · Zero-hardcoded configuration · Privacy-first RAG**
->
-> A self-organizing knowledge engine: ingest → classify → retrieve → decide → execute → absorb.
+> **Decision support, not execution. Knowledge that learns.**
 
 <p align="center">
   <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10+-blue.svg">
-  <img alt="Chunks" src="https://img.shields.io/badge/Chunks-93K+-green.svg">
-  <img alt="Domains" src="https://img.shields.io/badge/Domains-38-purple.svg">
-  <img alt="Version" src="https://img.shields.io/badge/Version-2.2.0-red.svg">
+  <img alt="Chunks" src="https://img.shields.io/badge/Chunks-143K+-green.svg">
+  <img alt="Domains" src="https://img.shields.io/badge/Domains-47-purple.svg">
+  <img alt="Version" src="https://img.shields.io/badge/Version-3.0.0-red.svg">
+  <img alt="Tests" src="https://img.shields.io/badge/Tests-PASS-brightgreen.svg">
 </p>
 
 ---
 
 ## What Is KAFED
 
-KAFED is a **knowledge management engine** designed for AI agents that need to own, organize, and evolve their knowledge — not just query it.
+KAFED is a **decision-support engine** for AI agents. It doesn't execute tasks — it enriches the agent's context so the agent makes better decisions, faster, with less token waste.
 
-Unlike a standard RAG pipeline that only retrieves, KAFED **classifies, evaluates, routes, executes, and absorbs** — forming a complete flywheel that gets smarter with every interaction.
-
-### Architecture (5 layers)
+Every turn, KAFED performs four mandatory steps and injects the result into the agent's context:
 
 ```
-                  ┌─────────────────────────┐
-    User Input →  │  D — Director           │  Strategic planning, EVAL, decision tree
-                  │  (eval · decision ·      │
-                  │   strategy · pipeline)   │
-                  └───────────┬─────────────┘
-                              │ subtask list
-                              ▼
-                  ┌─────────────────────────┐
-                  │  F — Finder             │  Model discovery, 3-vector routing
-                  │  (router · registry ·    │
-                  │   explorer · heartbeat)  │
-                  └───────────┬─────────────┘
-                              │ matched models
-                              ▼
-                  ┌─────────────────────────┐
-                  │  E — Executor           │  DAG scheduling, dispatch, feedback loop
-                  │  (dag · dispatcher ·     │
-                  │   engine)               │
-                  └───────────┬─────────────┘
-                              │ results
-                              ▼
-                  ┌─────────────────────────┐
-                  │  A — Analyzer           │  Pulse scheduling, audit, KB inspection
-                  │  (pulse · audit ·        │
-                  │   kb_audit)             │
-                  └───────────┬─────────────┘
-                              │ insights
-                              ▼
-                  ┌─────────────────────────┐
-                  │  K — Knowledge          │  Vector store, RAG, classification, events
-                  │  (rag · classify ·       │
-                  │   quality · flywheel)    │
-                  └───────────┬─────────────┘
-                              │
-                  ◄───── flywheel loop ──────►
+User Input → [5W1H Decomposition → YiCeNet Hexagram → Knowledge Recall → EVAL Scoring]
+                → Agent acts freely (tools, model selection, task splitting)
+                    → KAFED solidifies insights back into the knowledge base
 ```
 
-Each layer is a gear in a closed loop. Data cycles through D→F→E→A→K→D, and the system evolves without external intervention.
+The knowledge base is a self-organizing RAG system: it classifies, quality-filters, detects drift, and shares knowledge across instances via `.kpak` packages.
 
 ---
 
-## Why KAFED
+## Before / After
 
-### The Problem
-
-Standard RAG pipelines are **passive**: they store documents, retrieve chunks, and stop there. They don't:
-- Classify knowledge by domain or type
-- Evaluate task complexity before routing
-- Self-audit knowledge freshness and quality
-- Evolve their structure over time
-
-### The Solution
-
-KAFED treats knowledge as a **living system**. The 5-layer flywheel provides:
-
-| Layer | What It Solves |
-|-------|----------------|
-| **D** — Director | "How complex is this task? Should I decompose it?" |
-| **F** — Finder | "Which model or tool is best suited for this sub-task?" |
-| **E** — Executor | "How do I run N dependent subtasks in parallel?" |
-| **A** — Analyzer | "Did the result produce new knowledge? Any patterns?" |
-| **K** — Knowledge | "Store it, classify it, and check if we need to reorganize." |
+| Metric | Without KAFED | With KAFED v3 |
+|--------|--------------|---------------|
+| **Context quality** | Agent starts from scratch each turn | 5W1H + hexagram guidance + relevant knowledge recalled |
+| **Token waste** | ~40% spent re-discovering known facts | Knowledge injected upfront, no re-discovery |
+| **Model selection** | Hardcoded or guesswork | Finder's 3-vector aggregation (task ⊗ model ⊗ status) |
+| **Knowledge retention** | Lost between sessions | Auto-solidified into RAG, retrievable next session |
+| **Task complexity awareness** | None | EVAL 5-dimension scoring (Tier 1–3) |
+| **Knowledge decay** | Stale facts never cleaned | E1-E5 flywheel events: drift detection, dedup, staleness |
 
 ---
 
 ## Quick Start
 
-### One-command install (recommended)
+### Install
 
 ```bash
-# Clone
 git clone https://github.com/ahillzhao-msn/KAFED.git
 cd KAFED
 
-# One-command bootstrap — detects environment, generates config, inits modules, installs cron
-bash scripts/kafed-bootstrap.sh
+# One-command bootstrap
+bash scripts/install/kafed-bootstrap.sh
 
-# Or if KAFED is already pip-installed:
-kafed-bootstrap
+# Symlink Hermes tools
+bash scripts/install/symlink-tools.sh
 ```
 
-The bootstrap auto-detects:
-- **Hermes** venv — installs directly into it (no duplicate deps)
-- **WSL** — deploys pulse-manager for conditional cron execution
-- **GPU** — enables CUDA embedding acceleration
-- **llama-server** — auto-discovers base URL and port
-- **Existing Hermes providers** — auto-generates cloud model list
-
-After bootstrap, verify:
-
-```bash
-# Check configuration
-python3 -c "from kafed.config import get_config; print(get_config().show())"
-
-# Start heartbeat (cron registered automatically)
-kafed-heartbeat
-
-# Scan available models
-kafed-explore
-```
-
-### Manual install
-
-```bash
-# Install into Hermes venv (preferred)
-hermes venv python3 -m pip install -e .
-
-# Or standalone venv
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-
-# Generate config (auto-adapts to environment)
-python3 -m kafed.install.bootstrap --auto
-
-# Or manually copy and edit
-cp kafed.yaml.example ~/.kafed/kafed.yaml
-cp .env.example ~/.kafed/.env
-```
-
-### What gets initialized
-
-| Component | What happens | Trigger |
-|-----------|-------------|---------|
-| **Config** | Environment-adapted `~/.kafed/kafed.yaml` | Bootstrap Phase 2 |
-| **Directories** | `data/chroma`, `feedback_logs`, `kpak`, logs | Bootstrap Phase 3 |
-| **ChromaDB** | PersistentClient + collection creation | Bootstrap Phase 3 |
-| **Explorer** | `llama-server` + `hermes config` + cloud model scan | Bootstrap Phase 3 |
-| **Vector space** | Embedding-based worker vectors | Bootstrap Phase 3 |
-| **Heartbeat cron** | Every 2min model status probing | Bootstrap Phase 4 |
-| **Explorer cron** | Daily 4am model vector + pricing refresh | Bootstrap Phase 4 |
-| **Centroid rebuild** | Weekly Sunday 3am | Bootstrap Phase 4 |
-| **Pulse (WSL)** | 15min conditional task scheduler | Bootstrap Phase 4 |
+The bootstrap auto-detects your environment (Hermes venv, WSL, GPU, llama-server) and configures everything.
 
 ### Basic Usage
 
 ```python
-from kafed.entry import recall, solidify
+from kafed import recommend, solidify, find_partners
 
-# Ingest knowledge into the vector store
-result = solidify(
-    "SAP PM notification uses transaction IW21 for creation.",
-    target="kafed",
-    domain="SAP_PM",
-    source="training_manual",
-)
-# → {"status": "ok", "target": "kafed", "entries": 3}
+# Every turn: get decision context
+rec = recommend("SAP PM工单IW32增强")
+print(rec.inject())
+# ══════ KAFED 决策素材 ══════
+# ▎5W1H: what=分析 where=SAP PM 工单
+# ▎卦: ䷄ 需 ⚊⚊⚊⚋⚊⚋ — 等待时机
+# ▎知识召回: 8 条 (含 IW32 exit, 增强模式)
+# ▎难度: Tier 1  Score=1
 
-# Retrieve relevant knowledge
-results = recall(
-    "How to create a PM notification?",
-    top_k=5,
-    soft=True,
-)
+# When splitting tasks: find best models
+results = find_partners([
+    "Python code audit: embedding module",
+    "Refactor: Strategy pattern for backends",
+])
 for r in results:
-    print(f"[{r['domain']}] {r['content'][:100]}...")
+    best = r.candidates[0]
+    print(f"T{r.task_index+1}: {best.name} score={best.match_score:.3f}")
+
+# After responding: save learnings
+solidify("IW32增强: 先读现有exit再扩展APPEND", domain="SAP_PM")
 ```
 
-### Pipeline Orchestration
+### Hermes Agent Integration
 
-```python
-from kafed.director.pipeline import SOUL_CORE, PipelineRunner
+Add to your SOUL.md:
 
-runner = PipelineRunner(SOUL_CORE)
-while True:
-    step = runner.next_step()
-    if not step:
-        break
-    # LLM executes the step freely
-    runner.complete(step.step_id, result="done")
+```
+每轮开始 → kafed_recommend(user_input) → 注入上下文
+  → Agent 自由行动（可调 kafed_find_partners 匹配模型）
+    → kafed_solidify(insight)
 ```
 
-### Knowledge Packages (.kpak)
+Or call directly as Hermes tools: `kafed_recommend`, `kafed_find_partners`, `kafed_solidify`, `kafed_query`, `kafed_ingest`.
+
+### Knowledge Packages
 
 ```bash
-# List available packages
-python -m kafed.kpak list
-
-# Export a domain
-python -m kafed.kpak pack SAP_PM
-
-# Import from another instance
-python -m kafed.kpak unpack ./SAP_PM.kpak
-
-# Inspect a package
-python -m kafed.kpak info ./SAP_PM.kpak
+python -m kafed.kpak pack SAP_PM          # export domain
+python -m kafed.kpak unpack SAP_PM.kpak   # import to another instance
+python -m kafed.kpak info SAP_PM.kpak     # inspect contents
 ```
 
 ---
 
-## Configuration
+## Architecture
 
-KAFED uses a single configuration hub (`kafed/config.py`) with a clear priority chain:
+KAFED has four layers — a **decision-support frontend** and a **learning backend**:
 
 ```
-Environment variables  >  YAML file (kafed.yaml)  >  Code defaults
+┌── Frontend (every turn) ──┐          ┌── Backend (async) ──┐
+│                            │          │                      │
+│  Director                  │          │  Analyzer            │
+│    recommend()             │────────► │    solidify()        │
+│    5W1H → Hexagram →       │          │    session audit     │
+│    Recall → EVAL           │          │    knowledge audit   │
+│                            │          │                      │
+│  Finder (on-demand)        │          │  Scheduler           │
+│    find_partners()         │          │    task registry     │
+│    heartbeat probes        │          │    WSL compensation  │
+│    explorer scans          │          │                      │
+│                            │          │                      │
+│  Knowledge (passive)       │◄──────── │  Flywheel (E1-E5)    │
+│    RAG + classify          │          │    centroid rebuild  │
+│    ContextProvider         │          │    drift detection   │
+│    .kpak sharing           │          │    dedup + staleness │
+└────────────────────────────┘          └──────────────────────┘
 ```
 
-```python
-from kafed.config import get_config, get_secrets
-
-cfg = get_config()
-cfg.show()                     # View all config (keys masked)
-
-secrets = get_secrets()
-secrets.deepseek_api_key       # From .env or environment variable
-```
-
-All paths, thresholds, and weights are parameterized via config properties. No hardcoded values in sub-modules.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical design.
 
 ---
 
-## Project Layout
+## Core Principles
 
-```
-KAFED/
-├── src/kafed/
-│   ├── config.py           — Global configuration hub
-│   ├── log.py              — Unified logging (file + console)
-│   ├── entry.py            — Pipeline bridge layer
-│   ├── backlog.py          — Cross-session task queue
-│   ├── director/           — Strategic decisions (7 modules)
-│   │   ├── eval.py         — EVAL 5-dimension scoring
-│   │   ├── decision.py     — Autonomous decision tree
-│   │   ├── strategy.py     — Strategic orientation
-│   │   ├── planner.py      — Task decomposition
-│   │   ├── pipeline.py     — Pipeline commitment chain
-│   │   └── protocol.py     — Inter-layer protocols
-│   ├── finder/             — Model discovery & routing (6 modules)
-│   ├── executor/           — DAG execution (3 modules)
-│   ├── analyzer/           — Pulse & audit (4 modules)
-│   ├── knowledge/          — RAG, classification, quality (12 modules)
-│   │   ├── rag/            — Vector store, chunker, embedding
-│   │   ├── classify/       — Embedding-based domain classification
-│   │   ├── quality/        — Document quality scoring
-│   │   └── flywheel/       — Event-driven self-check (E1-E5)
-│   ├── kpak/               — Knowledge package export/import
-│   ├── install/            — Bootstrap & environment detection
-│   └── client/             — CLI + FlowVisualizer
-├── scripts/                — Utility scripts + bootstrap
-├── tests/                  — pytest suite (45 tests)
-├── templates/              — SOUL cognitive architecture templates
-├── kafed.yaml.example      — Configuration template
-├── .env.example            — Secrets template
-├── setup.sh                — One-click install
-├── ARCHITECTURE.md         — Full architecture documentation
-└── README.md
-```
+1. **Agent owns decisions, KAFED provides context** — the engine never replaces the agent's judgment. It enriches the soil, doesn't plant the seeds.
+
+2. **Embedding space is the universal language** — classification, retrieval, model matching all happen in vector space. No hardcoded keyword rules.
+
+3. **Knowledge is alive** — the flywheel detects drift, staleness, and growth automatically. Knowledge decays if unused, strengthens if revisited.
+
+4. **Privacy-first sharing** — `.kpak` packages share structure and centroids, never raw data or model weights. Export with confidence.
+
+5. **Quality over quantity** — every chunk is scored. Noise is filtered before storage, not during retrieval.
+
+---
+
+## Personal AI Manifesto
+
+> KAFED was born from a simple frustration: AI agents should remember, but they shouldn't need to be retrained. They should learn from every conversation, but they shouldn't drown in noise. They should make decisions with context, not guesswork.
+>
+> The name comes from the Arabic root ق-ف-د (Q-F-D) — to bind, to knot, to tie knowledge together. KAFED doesn't just store facts. It weaves them into a structure that the agent can navigate.
+>
+> We believe that the best AI assistant is not the one with the most parameters — it's the one that wastes the fewest tokens re-learning what it already knows.
+>
+> **知之为知之，不知为不知，是智也。**
+> *To know what you know, and know what you don't — that is wisdom.*
 
 ---
 
@@ -278,29 +167,16 @@ KAFED/
 
 - **Python 3.10+**
 - **ChromaDB** — vector database
-- **sentence-transformers** — bge-small-en-v1.5 embedding model
-- **NumPy**, **PyYAML** — core
-- **PyTorch** (optional) — GPU-accelerated embedding
+- **sentence-transformers** — bge-small-en-v1.5 (384d)
+- **NumPy**, **PyYAML**
+- **PyTorch** (optional) — GPU embedding
 
 ---
 
-## Core Principles
+## Related
 
-1. **Vector store is primary storage** — not an accessory, the physical kernel of knowledge
-2. **Centroid is internalized structure** — store mathematical structure, not raw weights
-3. **RAG is instantly available** — ingest and retrieve immediately, no SFT/training needed
-4. **Event-driven, not threshold-driven** — self-checking flywheel (E1-E5), no hardcoded timers
-5. **Share structure, not weights** — `.kpak` shares centroids, not model weights
-6. **Quality first, don't over-engineer** — slow but clean
+- [YiCeNet](https://github.com/ahillzhao-msn/YiCeNet) — I-Ching neural network, the intuition layer
 
 ---
-
-## Related Projects
-
-- [YiCeNet](https://github.com/ahillzhao-msn/YiCeNet) — I-Ching inspired neural network, the intuition layer for KAFED pipelines
-
----
-
-## License
 
 [MIT](LICENSE) © ahillzhao-msn

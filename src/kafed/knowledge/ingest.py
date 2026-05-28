@@ -1,12 +1,16 @@
 """KM Ingest — 知識寫入統一入口。
 
-取代原來散落在 hub.absorb() 和 hub.solidify() 的重複 RAG 寫入邏輯。
+將洞察/內容寫入 KAFED 向量庫（分塊 + 嵌入 + ChromaDB + 飛輪）。
+支援單條文本（Agent solidify）和批量文本（離線掃描攝入）。
+backlog 已委託給 Hermes 原生。
 """
+
 from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Any, Optional
+from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger("kafed.knowledge.ingest")
 
@@ -16,20 +20,18 @@ def ingest(text: str, target: str = "kafed", domain: str = "GENERAL",
     """將知識寫入指定目標。
 
     Args:
-        text: 知識內容
-        target: "kafed" → KAFED 向量庫 | "backlog" → backlog 待辦
-                "event" → 觸發飛輪事件 | "memory" → 返回建議（由調用方決定）
-        domain: 域名（kafed/event 目標使用）
+        text: 知識內容（單條文本，或 Markdown 文檔）
+        target: "kafed" → 向量庫 | "event" → 飛輪事件
+                "memory" → 返回建議（調用方決定）
+        domain: 域名
         source: 來源標識
-        title: 可選標題（backlog 目標使用）
+        title: 可選標題
 
     Returns:
         {"status": str, "target": str, "detail": str, "entries": int}
     """
     if target == "kafed":
         return _ingest_to_kafed(text, domain, source)
-    elif target == "backlog":
-        return _ingest_to_backlog(title or text[:80], text[:200])
     elif target == "event":
         return _trigger_event(domain)
     elif target == "memory":
@@ -40,31 +42,124 @@ def ingest(text: str, target: str = "kafed", domain: str = "GENERAL",
             "detail": f"未知目標: {target}", "entries": 0}
 
 
+def batch_ingest(texts: list[str], domain: str = "GENERAL",
+                 source: str = "batch") -> dict:
+    """批量寫入——離線掃描場景。
+
+    每條文本獨立分塊、嵌入、寫入。適合 cron 任務批量攝入。
+    與 ingest() 使用相同的底層管道。
+
+    Args:
+        texts: 文本列表（每條可為一段洞察或一篇完整文檔）
+        domain: 域名
+        source: 來源標識
+
+    Returns:
+        {"status": str, "total_texts": int, "total_chunks": int,
+         "failed": int, "detail": str}
+    """
+    total_chunks = 0
+    failed = 0
+    for i, text in enumerate(texts):
+        result = _ingest_to_kafed(text, domain, source)
+        if result.get("status") == "ok":
+            total_chunks += result.get("entries", 0)
+        else:
+            failed += 1
+            logger.warning("batch_ingest[%d]: %s", i, result.get("detail", "?"))
+    return {
+        "status": "ok" if failed == 0 else "partial",
+        "total_texts": len(texts),
+        "total_chunks": total_chunks,
+        "failed": failed,
+        "detail": f"{len(texts)} 篇 → {total_chunks} chunks ({failed} failed)",
+    }
+
+
+def batch_ingest_files(file_paths: list[str], domain: str = "GENERAL",
+                       source: str = "file_scan") -> dict:
+    """批量攝入檔案——離線掃描場景。
+
+    讀取檔案內容，每檔案作為一篇文檔攝入。
+    支援 .md / .txt 格式。其他格式需先用 doc2md 轉換。
+
+    Args:
+        file_paths: 檔案路徑列表
+        domain: 域名
+        source: 來源標識
+
+    Returns:
+        同 batch_ingest()
+    """
+    texts = []
+    failed_reads = 0
+    for fp in file_paths:
+        try:
+            content = Path(fp).read_text(encoding="utf-8")
+            if content.strip():
+                # 附加檔名作為上下文
+                fname = Path(fp).name
+                texts.append(f"# {fname}\n\n{content}")
+        except Exception as e:
+            failed_reads += 1
+            logger.warning("batch_ingest_files: 無法讀取 %s: %s", fp, e)
+
+    result = batch_ingest(texts, domain=domain, source=source)
+    result["files_read"] = len(file_paths) - failed_reads
+    result["files_failed"] = failed_reads
+    return result
+
+
+# ══════════════════════════════════════════════════
+# 內部
+# ══════════════════════════════════════════════════
+
 def _ingest_to_kafed(text: str, domain: str = "GENERAL",
                      source: str = "") -> dict:
-    """寫入 KAFED 向量庫（分塊 + 嵌入 + ChromaDB + 飛輪事件）。"""
+    """寫入 KAFED 向量庫（分塊 + 嵌入 + ChromaDB + 飛輪事件）。
+
+    保留 chunk_document() 的全部結構化元數據：
+    標題鏈 (heading_chain)、品質分數 (quality_score)、
+    字元數 (chars)、分塊序號 (chunk_index)。
+    """
     try:
         from kafed.knowledge.rag.vector_store import VectorStore
         from kafed.knowledge.rag.chunker import chunk_document
-        from kafed.knowledge.flywheel.event_checker import EventChecker
+        from kafed.knowledge.flywheel_events import EventChecker
 
         vs = VectorStore()
-        chunks = chunk_document(text) or [text]
+        chunks = chunk_document(text, domain=domain) or [text]
 
         texts = []
         metadatas = []
         ids = []
+
         for j, chunk in enumerate(chunks):
-            texts.append(chunk if isinstance(chunk, str) else chunk.get("content", str(chunk)))
-            metadatas.append({
-                "domain": domain,
-                "source": source or "ingest",
-            })
-            _uid = hashlib.md5(texts[-1].encode()).hexdigest()[:12]
+            if isinstance(chunk, str):
+                # 降級：chunker 未產出結構化塊
+                content = chunk
+                meta = {"domain": domain, "source": source or "ingest"}
+            else:
+                # 結構化塊：保留 chunker 的所有元數據
+                content = chunk.get("content", str(chunk))
+                meta = {
+                    "domain": domain,
+                    "source": source or chunk.get("source", "ingest"),
+                    "heading": chunk.get("heading", ""),
+                    "heading_chain": ",".join(chunk.get("heading_chain", [])),
+                    "quality_score": chunk.get("quality_score", 0.0),
+                    "chars": chunk.get("chars", len(content)),
+                    "chunk_index": chunk.get("chunk_index", j),
+                }
+
+            texts.append(content)
+            metadatas.append(meta)
+            _uid = hashlib.md5(content.encode()).hexdigest()[:12]
             ids.append(f"{domain}_ingest_{_uid}")
 
         vs.add(texts, metadatas=metadatas, ids=ids)
 
+        # 飛輪事件
         ec = EventChecker(vs, None)
         ec.after_ingest(domain, vs.count_by_domain(domain))
 
@@ -77,23 +172,11 @@ def _ingest_to_kafed(text: str, domain: str = "GENERAL",
                 "detail": str(e), "entries": 0}
 
 
-def _ingest_to_backlog(title: str, description: str = "") -> dict:
-    """推入 backlog（委託 knowledge/backlog.py）。"""
-    try:
-        from kafed.backlog import push as bp
-        ok = bp(title, value=0.7, description=description)
-        return {"status": "ok" if ok else "error", "target": "backlog",
-                "detail": f"已推入 backlog: {title[:60]}", "entries": 1}
-    except Exception as e:
-        return {"status": "error", "target": "backlog",
-                "detail": str(e), "entries": 0}
-
-
 def _trigger_event(domain: str) -> dict:
     """觸發飛輪事件檢查。"""
     try:
         from kafed.knowledge.rag.vector_store import VectorStore
-        from kafed.knowledge.flywheel.event_checker import EventChecker
+        from kafed.knowledge.flywheel_events import EventChecker
 
         vs = VectorStore()
         ec = EventChecker(vs, None)
@@ -105,21 +188,3 @@ def _trigger_event(domain: str) -> dict:
     except Exception as e:
         return {"status": "error", "target": "event",
                 "detail": str(e), "entries": 0}
-
-
-def backlog_check() -> list[dict]:
-    """檢查 backlog 待辦（委託 knowledge/backlog.py）。"""
-    try:
-        from kafed.backlog import check
-        return check()
-    except Exception:
-        return []
-
-
-def backlog_push(title: str, value: float = 0.7) -> bool:
-    """推入 backlog（委託 knowledge/backlog.py）。"""
-    try:
-        from kafed.backlog import push
-        return push(title, value=value)
-    except Exception:
-        return False

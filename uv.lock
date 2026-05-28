@@ -997,7 +997,7 @@ wheels = [
 
 [[package]]
 name = "kafed"
-version = "2.2.0"
+version = "2.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "chromadb" },
@@ -1006,7 +1006,7 @@ dependencies = [
     { name = "sentence-transformers" },
 ]
 
-[package.dev-dependencies]
+[package.optional-dependencies]
 dev = [
     { name = "pytest" },
 ]
@@ -1015,11 +1015,10 @@ dev = [
 requires-dist = [
     { name = "chromadb", specifier = ">=1.5" },
     { name = "numpy", specifier = ">=1.24" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "sentence-transformers", specifier = ">=3.0" },
 ]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8" }]
+provides-extras = ["dev"]
 
 [[package]]
 name = "kubernetes"

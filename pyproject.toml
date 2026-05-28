@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kafed"
-version = "2.2.0"
+version = "3.0.0"
 description = "Knowledge Agent Framework for Embedded Data — Five-layer Intelligent Flywheel"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,13 +33,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# 無 —— KAFED 運行無需 HTTP 服務器
+dev = ["pytest>=8", "pytest-cov", "ruff"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.uv]
-dev-dependencies = ["pytest>=8"]
 
 [project.scripts]
 kafed-bootstrap = "kafed.install.bootstrap:main"

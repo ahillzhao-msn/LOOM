@@ -265,57 +265,48 @@ def status() -> dict:
 
 # ── Backlog 消費者 ──────────────────────────────
 # 以下函數供 pulse-check.py 或 cron 調用。
-# 當 backlog 有高優先級待辦且 GPU 空閒時，寫 trigger 文件供下次 session 消費。
+# backlog 現在由 Hermes 原生管理。此函數委託給 Hermes CLI。
 
 
 def check_backlog_and_signal(silent: bool = False) -> dict:
-    """檢查 backlog 是否有高優先級待辦。有則寫 trigger 文件。
+    """檢查 Hermes backlog 是否有高優先級待辦。
+
+    委託給 Hermes 原生 backlog——KAFED 不再維護獨立 backlog。
 
     Returns:
         {"status": str, "count": int, "top": str or None, "signaled": bool}
     """
     try:
         import json
-        from pathlib import Path
-        from kafed.entry import backlog_check
+        import subprocess
 
-        pending = backlog_check()
-        if not pending:
+        result = subprocess.run(
+            ["hermes", "backlog", "list", "--json"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return {"status": "hermes_unavailable", "count": 0,
+                    "top": None, "signaled": False}
+
+        items = json.loads(result.stdout) if result.stdout.strip() else []
+        if not items:
             return {"status": "empty", "count": 0, "top": None, "signaled": False}
 
-        top = pending[0]
-        ps = top.get("priority_score", 0)
-
-        # 只關心高優待辦 (≥0.6)
-        if ps < 0.6:
-            return {"status": "low_priority", "count": len(pending),
-                    "top": top.get("title", "?"), "signaled": False}
-
-        # 寫 trigger 文件 — 供下次 agent session 消費
-        trigger_dir = Path.home() / ".hermes" / "data"
-        trigger_dir.mkdir(parents=True, exist_ok=True)
-        trigger_path = trigger_dir / "backlog_trigger.json"
-
-        trigger_data = {
-            "triggered_at": __import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc).isoformat(),
-            "item_id": top.get("id"),
-            "title": top.get("title", "?"),
-            "priority_score": ps,
-            "description": top.get("description", ""),
-        }
-        trigger_path.write_text(json.dumps(trigger_data, indent=2, ensure_ascii=False))
+        # Hermes backlog 沒有 priority_score——取第一個 pending
+        top = items[0] if isinstance(items, list) else items
+        title = top.get("title", top.get("goal", "?")) if isinstance(top, dict) else str(top)[:80]
 
         if not silent:
-            print(f"  [backlog] ⏰ 觸發: [{ps:.3f}] {top.get('title', '?')[:60]}")
+            print(f"  [backlog] Hermes 待辦: {len(items)} 項 → top: {title[:60]}")
 
-        return {"status": "signaled", "count": len(pending),
-                "top": top.get("title", "?"), "signaled": True}
+        return {"status": "ok", "count": len(items),
+                "top": title, "signaled": len(items) > 0}
 
     except Exception as e:
         if not silent:
-            print(f"  [backlog] ⚠️  檢查失敗: {e}")
-        return {"status": "error", "count": 0, "top": None, "signaled": False, "error": str(e)}
+            print(f"  [backlog] 檢查失敗: {e}")
+        return {"status": "error", "count": 0, "top": None,
+                "signaled": False, "error": str(e)}
 
 
 def run_task(task_name: str) -> dict:

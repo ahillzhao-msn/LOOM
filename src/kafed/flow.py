@@ -5,9 +5,9 @@ CLI 上展示操作鏈條，像公交路線圖。
 全局開關：set_flow_enabled(True/False) 或 KAFED_FLOW=0 環境變量。
 
 用法:
-    from kafed.client import flow
+    from kafed.flow import chain, hop, stop
 
-    flow.chain("記憶寫入", [
+    chain("記憶寫入", [
         ("🔍", "洞察", "設計審視教訓"),
         ("🏷️", "類型判斷", "架構決策"),
         ("📍", "分流", "wiki/concepts/"),

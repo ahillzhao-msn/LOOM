@@ -1,17 +1,31 @@
-"""KAFED — Knowledge Agent Framework for Embedded Data.
+"""KAFED — Knowledge Agent Framework for Embedded Data.  v3.0
 
-五層智能飛輪：Knowledge → Analysis → Finder → Executor → Director
-知識管理、自主分析、三維路由、DAG執行、戰略規劃。
+五層智能飛輪：Director → Finder → Knowledge → Analyzer → Scheduler
 
-雙模式：本地導入（零進程）或 HTTP 服務（可選 FastAPI）。
+前段（決策支援）：director.recommend() — 卦→召→評 三步注入 Agent 上下文
+後段（學習閉環）：analyzer.solidifier + knowledge 飛輪
+
+Executors 已移除——委託給 Hermes delegate_task。
+Backlog 已移除——使用 Hermes 原生 backlog。
+ActionRegistry 已移除——過度設計，未被實際驅動。
 """
 
-__version__ = "2.2.2"
+__version__ = "3.0.0"
 
-# ── Action 自動註冊 ──
-from kafed import action_registry  # noqa: F401
-import kafed.director.actions     # noqa: F401
-import kafed.knowledge.actions    # noqa: F401
-import kafed.finder.actions       # noqa: F401
-import kafed.executor.actions     # noqa: F401
-import kafed.analyzer.actions     # noqa: F401
+# ── 公開 API ──
+from kafed.director.recommend import recommend, Recommendation
+from kafed.analyzer.solidifier import solidify, session_end_audit
+from kafed.finder.router import Router as _Router
+
+# 便利工廠
+def find_partners(briefs: list[str]):
+    """快捷調用 Finder 匹配模型。"""
+    return _Router().find_partners(briefs)
+
+__all__ = [
+    "recommend",
+    "Recommendation",
+    "solidify",
+    "session_end_audit",
+    "find_partners",
+]

@@ -720,13 +720,17 @@ def _install_yicenet_soft(target_python: str = ""):
                 return
             print("  ✓ YiCeNet cloned")
 
-        # 2. 調用 YiCeNet 的 bootstrap
-        bootstrap_script = yicenet_dir / "scripts" / "bootstrap.py"
-        if not bootstrap_script.exists():
-            print(f"  ⚠ YiCeNet bootstrap.py not found (soft skip)")
-            return
+        # 2. 調用 YiCeNet 的 bootstrap（使用包內入口，非 scripts/ 腳本）
+        # 先確保已安裝為 editable package，然後用 CLI 入口
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-e", str(yicenet_dir)],
+                capture_output=True, text=True, timeout=60,
+            )
+        except Exception:
+            pass
 
-        cmd = [sys.executable, str(bootstrap_script), "--auto"]
+        cmd = [sys.executable, "-m", "yicenet.bootstrap", "--auto"]
         if target_python:
             cmd += ["--venv", target_python]
         cmd += ["--skip-hermes"]  # Hermes 工具鏈接由 KAFED bootstrap 管理

@@ -1,534 +1,416 @@
 # KAFED Architecture
 
-> Version 2.2.0 · Five-layer intelligent flywheel · Environment-adaptive bootstrap · 45 tests
+> Version 3.0.0 · Decision-Support Engine · Director · Finder · Analyzer · Knowledge · Scheduler
 
 ---
 
 ## Table of Contents
 
 1. [Design Philosophy](#1-design-philosophy)
-2. [Layer Architecture](#2-layer-architecture)
-3. [Data Flow](#3-data-flow)
-4. [Component Details](#4-component-details)
-5. [Cron Schedule](#5-cron-schedule)
-6. [Bootstrap & Installation](#6-bootstrap--installation)
-7. [Configuration System](#7-configuration-system)
-8. [Knowledge Lifecycle](#8-knowledge-lifecycle)
-9. [Testing & Quality](#9-testing--quality)
+2. [System Overview](#2-system-overview)
+3. [Frontend: Decision Support](#3-frontend-decision-support)
+4. [Finder: Model Matching](#4-finder-model-matching)
+5. [Backend: Learning Loop](#5-backend-learning-loop)
+6. [Knowledge Layer](#6-knowledge-layer)
+7. [Scheduler & Compensation](#7-scheduler--compensation)
+8. [Configuration System](#8-configuration-system)
+9. [Knowledge Lifecycle](#9-knowledge-lifecycle)
 
 ---
 
 ## 1. Design Philosophy
 
-KAFED is built on a three-level framework inspired by classical Chinese philosophy:
+KAFED is built on a three-level framework:
 
 | Level | Principle | Engineering Manifestation |
 |-------|-----------|--------------------------|
-| **道** (Tao) | Follow nature, do not overreach | Pipeline commitment chain, not rigid scripts |
-| **法** (Method) | Rules and systems | EVAL scoring, decision tree, four reflections |
-| **兵** (Tactics) | Win first, then fight | Read before act, one-step-one-verify |
+| **道** (Tao) | Follow nature, do not overreach | KAFED enriches context, Agent owns decisions |
+| **法** (Method) | Rules and systems | Four mandatory steps per turn: 5W1H → Hexagram → Recall → EVAL |
+| **兵** (Tactics) | Win first, then fight | All context gathered before Agent acts |
 
 ### Six Engineering Principles
 
-1. **Vector store is primary storage** — not an accessory bolted onto the side. Everything revolves around the vector database.
-2. **Centroid is internalized structure** — store mathematical cluster representations, not raw weights or raw text.
-3. **RAG is instantly available** — ingest and retrieve immediately. No SFT, no training pipeline, no delay.
-4. **Event-driven, not threshold-driven** — the self-checking flywheel (E1–E5) responds to change events, not hardcoded timers.
-5. **Share structure, not weights** — `.kpak` packages share centroid vectors and knowledge units, not model weights.
-6. **Quality first, don't over-engineer** — prefer a clean 100-line solution over a sophisticated 1000-line one.
+1. **Agent owns decisions, KAFED provides context** — KAFED never replaces the agent's judgment. It enriches the decision surface.
+2. **Embedding space is the universal language** — classification, retrieval, and model matching all operate in the same vector space. No hardcoded keyword rules.
+3. **Vector store is primary storage** — ChromaDB is the physical kernel. All knowledge paths lead through it.
+4. **Event-driven, not threshold-driven** — the flywheel (E1–E5) responds to change events, not hardcoded timers.
+5. **Share structure, not weights** — `.kpak` packages share centroids and knowledge units, never raw data.
+6. **Quality first** — every chunk is scored and filtered before storage.
 
 ---
 
-## 2. Layer Architecture
+## 2. System Overview
 
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│                         D — Director                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐           │
-│  │  EVAL    │  │ Decision │  │Strategy  │  │Pipeline  │           │
-│  │ (5-dim)  │  │ Tree     │  │Selector  │  │Runner    │           │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘           │
-│  Core: Task complexity assessment, autonomous decision-making,     │
-│        strategic orientation selection, pipeline step tracking.    │
-├────────────────────────────────────────────────────────────────────┤
-│                         F — Finder                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐           │
-│  │ Registry │  │ Router   │  │ Explorer │  │ Heartbeat│           │
-│  │ (roster) │  │ 3-vector │  │ (scan)   │  │ (health) │           │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘           │
-│  Core: Dual-mode model discovery (fast/full), context-aware        │
-│        embedding-space routing, status monitoring.                 │
-├────────────────────────────────────────────────────────────────────┤
-│                         E — Executor                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                          │
-│  │ DAG      │  │Dispatcher│  │ Engine   │                          │
-│  │Scheduler │  │ (script+ │  │(feedback │                          │
-│  │          │  │  LLM)    │  │  loop)   │                          │
-│  └──────────┘  └──────────┘  └──────────┘                          │
-│  Core: DAG dependency management, supervised feedback loop         │
-│  (fail → replan → continue or abort).                             │
-├────────────────────────────────────────────────────────────────────┤
-│                         A — Analyzer                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                          │
-│  │ Pulse    │  │ Audit    │  │ KB Audit │                          │
-│  │Scheduler │  │Engine    │  │Inspector │                          │
-│  └──────────┘  └──────────┘  └──────────┘                          │
-│  Core: Task scheduling, session audit (intent vs outcome),         │
-│        knowledge base health inspection.                           │
-├────────────────────────────────────────────────────────────────────┤
-│                         K — Knowledge                              │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐           │
-│  │ RAG      │  │ Classify │  │ Quality  │  │ Flywheel │           │
-│  │(engine)  │  │(domains) │  │(clean)   │  │(E1-E5)   │           │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘           │
-│  Core: Vector retrieval, 3-tier hierarchical classification        │
-│  (Domain → Level → Type), quality filtering, event-driven flywheel.│
-└────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    KAFED v3.0                                │
+│                                                              │
+│  ┌─────── Frontend (per turn) ───────┐                       │
+│  │                                    │                      │
+│  │  Director                          │                      │
+│  │  ┌──────────────────────────────┐  │                      │
+│  │  │ recommend(user_input)        │  │                      │
+│  │  │  問: 5W1H decomposition     │  │                      │
+│  │  │  卦: YiCeNet hexagram       │  │                      │
+│  │  │  召: ContextProvider recall │  │                      │
+│  │  │  評: EVAL 5-dim scoring     │  │                      │
+│  │  └──────────────┬───────────────┘  │                      │
+│  │                 │ inject()         │                      │
+│  │                 ▼                  │                      │
+│  │         Agent Context              │                      │
+│  │                 │                  │                      │
+│  │  Finder (on-demand)               │                      │
+│  │  ┌──────────────────────────────┐  │                      │
+│  │  │ find_partners(briefs)        │  │                      │
+│  │  │ 3-vector aggregation:        │  │                      │
+│  │  │ task⊗model⊗status → ranked   │  │                      │
+│  │  └──────────────────────────────┘  │                      │
+│  └────────────────────────────────────┘                      │
+│                                                              │
+│  ┌─────── Backend (async) ───────────┐                       │
+│  │                                    │                      │
+│  │  Analyzer                          │                      │
+│  │  ┌──────────────────────────────┐  │                      │
+│  │  │ solidify(insight) → KM write │  │                      │
+│  │  │ session_end_audit()          │  │                      │
+│  │  │ knowledge_audit()            │  │                      │
+│  │  └──────────────────────────────┘  │                      │
+│  │                                    │                      │
+│  │  Scheduler                         │                      │
+│  │  ┌──────────────────────────────┐  │                      │
+│  │  │ TaskRegistry + TaskRunner    │  │                      │
+│  │  │ WSL compensation             │  │                      │
+│  │  │ builtin tasks (heartbeat,    │  │                      │
+│  │  │   flywheel, explorer scan)   │  │                      │
+│  │  └──────────────────────────────┘  │                      │
+│  └────────────────────────────────────┘                      │
+│                                                              │
+│  ┌─────── Knowledge (passive) ────────┐                      │
+│  │  RAG Engine · VectorStore          │                      │
+│  │  ContextProvider · Classification  │                      │
+│  │  Quality Filter · Flywheel Events  │                      │
+│  │  kpak Export/Import                │                      │
+│  └────────────────────────────────────┘                      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
----
-
-## 3. Data Flow
-
-### Normal Path (Task Execution)
+### Data Flow (One Turn)
 
 ```
-1. Input → D: EVAL (F1-F5 scoring) → decision tree → strategy selection
-2. D → F: subtask list → find_partners() → model candidates per subtask
-3. F → D: [subtask → model candidates] ranked by embedding similarity
-4. D → E: TaskPlan with selected models → ExecutorEngine.execute_dag()
-5. E → A: ExecutionReport → Analyzer.absorb() (pattern detection, insight extraction)
-6. A → K: KnowledgeDeposit → vector store write + flywheel events
-```
-
-### Supervised Feedback Loop
-
-```
-Executor runs DAG. Each task completion/failure triggers callback:
-  - First failure → REPLAN (Director re-evaluates and adjusts)
-  - Subsequent failures → CONTINUE (don't let one task block the whole DAG)
-  - Any failure point can trigger ABORT (Director decides to abort)
-```
-
-### Knowledge Flywheel (E1-E5)
-
-```
-E1: Threshold — domain entry count crosses pre-defined thresholds (10, 50, 100...)
-E2: Drift — centroid drift exceeds minimum (0.05)
-E3: Growth — domain grows >30% since last repack
-E4: Dedup — similarity check finds >0.95 duplicate candidates
-E5: Stale — entries older than 90 days without hits
+1. User Input
+     │
+2. Director.recommend()
+     ├─ 5W1H: heuristic decomposition → structured problem view
+     ├─ Hexagram: YiCeNet prediction (5W1H as input signal)
+     ├─ Recall: ContextProvider → RAG + Wiki + Memory/Session/Skill
+     └─ EVAL: F1-F5 scoring + hexagram modulation
+     │
+3. Recommendation.inject() → Agent context
+     │
+4. Agent acts freely
+     ├─ Optional: find_partners(briefs) → model suggestions
+     ├─ Uses Hermes tools, delegate_task, etc.
+     └─ Generates response
+     │
+5. Analyzer.solidify(insight) → KM write + flywheel events
 ```
 
 ---
 
-## 4. Component Details
+## 3. Frontend: Decision Support
 
-### 4.1 Director Layer
+### 3.1 Director — `recommend()`
 
-#### EVAL (`director/eval.py`)
+The single entry point. Called every turn before the Agent acts.
+
+```
+recommend(user_input) → Recommendation
+  ├─ 5W1H: {what, why, who, where, when, how}
+  ├─ hexagram: {id, symbol, six_lines, q_value, chain, candidates}
+  ├─ knowledge_items: [ContextItem, ...]
+  ├─ eval_score: EvalScore {tier, f1_scope, f3_freshness, f4_risk}
+  └─ inject() → structured text for agent prompt
+```
+
+#### 5W1H Decomposition
+
+Heuristic extraction from user input — no LLM involved. Each dimension is filled only when keywords match:
+- **What**: action verbs (分析, 重構, audit, fix...)
+- **Where**: domain hints (SAP, KAFED, Python, WSL...)
+- **Why**: purpose patterns (為什麼, 為了, because...)
+- **When**: urgency signals (緊急, ASAP, 今天...)
+- **How**: method constraints (安全, 一步一驗, 最小改動...)
+
+The 5W1H result serves as a richer input signal for YiCeNet than raw user text.
+
+#### Hexagram (YiCeNet Integration)
+
+YiCeNet predicts an I-Ching hexagram (1–64) with a Q-value confidence score. Each hexagram maps to:
+- Unicode symbol (䷀–䷿, U+4DC0–U+4DFF)
+- Six-line display (⚊⚋ monograms)
+- Chinese name + English name
+- Interpretation text
+
+Hexagram chains form across turns: `䷀→䷫→䷠→䷋` (乾→姤→遯→否). The chain is tracked in `Recommendation.hexagram["chain"]` and passed back to `_step_hexagram()` in the next turn via `chain_history`.
+
+Hexagram Q-value modulates EVAL risk scoring: Q > 0.8 lowers risk, Q < 0.3 raises it.
+
+#### Knowledge Recall (ContextProvider)
+
+Multi-source recall using the same embedding model (bge-small 384d) across all sources:
+
+| Source | Match Method | Items | KAFED Role |
+|--------|-------------|-------|-----------|
+| RAG (ChromaDB) | Cosine similarity | Top-8 | Primary channel |
+| Wiki | Cosine similarity (domain-filtered) | Top-4 | Same store |
+| Memory | Hermes CLI query + embedding | Top-3 | Read-only |
+| Sessions | Hermes CLI query + embedding | Top-3 | Read-only |
+| Skills | Hermes CLI query + embedding | Top-3 | Read-only |
+
+KAFED only manages RAG + Wiki. Memory, Sessions, and Skills are Agent-managed — KAFED queries them in read-only mode and includes the query embedding vector so the Agent can do its own matching.
+
+#### EVAL Scoring
 
 Five-dimensional task assessment:
 
 | Dimension | Scale | Description |
 |-----------|-------|-------------|
-| F1 — Scope | 1–3 | Single point → Multi → Cross-domain |
+| F1 — Scope | 1–3 | Single → Multi → Cross-domain |
 | F2 — People | 1–3 | Self → Team → Organization |
-| F3 — Freshness | 1–3 | Common → Requires research → Novel/Real-time |
+| F3 — Freshness | 1–3 | Common → Research → Novel/Realtime |
 | F4 — Risk | 1–3 | Read-only → Modify → Deploy |
-| F5 — Token Cost | 1–3 | One sentence → Paragraph → Long document |
+| F5 — Token Cost | 1–3 | One sentence → Paragraph → Long doc |
 
-Score = max(F1..F5). Tier 1 (score≤1) → quick path. Tier 3 (score≥3) → full DAG.
+Score = max(F1..F5). Tier 1 (score≤1), Tier 2 (score=2), Tier 3 (score=3). The Agent uses this to decide whether to split tasks or call `find_partners()`.
 
-#### Decision Tree (`director/decision.py`)
+---
 
-```
-Goal alignment check → Irreversibility check → Cost check → Precedent check
-→ Each returns: EXECUTE_DIRECT / PROPOSE_SCHEDULE / PROPOSE_DISCUSS / DEFER / ESCALATE / DELEGATE
-```
+## 4. Finder: Model Matching
 
-#### Pipeline Runner (`director/pipeline.py`)
+### 4.1 Router — `find_partners(briefs)`
 
-Three pre-defined pipelines:
+The single entry point. Accepts N task descriptions, returns N ranked candidate lists.
 
-| Pipeline | Steps | Use Case |
-|----------|-------|----------|
-| `soul_core` | 問→卦→召→評→界→決→編?→應→固 | General purpose |
-| `soul_quick` | 問→卦→召→評→應→固 | Simple tasks (Tier 1) |
-| `soul_deep` | 問→卦→召→評→界→決→編→應→固 | Cross-domain (Tier 3) |
-
-The runner tracks step status (pending/running/done/skipped/blocked) and enforces dependency order. Steps are not scripts — they are checklists that the LLM executes freely.
-
-### 4.2 Finder Layer
-
-#### Router (`finder/router.py`)
-
-Dual-mode routing — the single entry point `find_partners(briefs)` accepts N task descriptions and returns N ranked candidate lists:
+**Dual-mode routing:**
 
 | Mode | Trigger | Method |
 |------|---------|--------|
-| `fast_route` | < 3 workers | Direct llama.cpp discovery + config scan |
-| `full_route` | ≥ 3 workers | 3-vector aggregation: task ⊗ model ⊗ status |
+| `fast_route` | < 3 online models | Direct Hermes config + llama-server discovery |
+| `full_route` | ≥ 3 models | 3-vector aggregation |
 
-**Three-vector aggregation** (the core routing logic):
+**Three-vector aggregation (full_route):**
 
 ```
-sub_task_embeddings (N × 384d)
-         │
-    cosine similarity  ← task embedding ⊗ model capability vectors
-         + context_boost  ← ContextSpace dynamic buffer (recent context)
-         + sta_score      ← status_vector × [w_cap, w_ctx, w_sta]
-         │
-         ▼
-    N × FindPartnersResult (each: top-k candidates sorted by aggregate score)
-         │
-         ▼ Director decision tree + three reflections — final selection
+Input 1: Task embeddings (N × 384d)
+        cosine similarity ← task ⊗ model capability vectors
+Input 2: Model capability vectors (from Explorer scans)
+        + context_boost ← ContextSpace dynamic buffer
+Input 3: Real-time status vectors (from Heartbeat probes)
+        + sta_score ← [online, TPS, load, latency]
+
+Aggregate: score = w_cap × cosine + w_ctx × context_boost + w_sta × sta_score
+           (w_cap=0.5, w_ctx=0.3, w_sta=0.2 — configurable)
 ```
 
-Each dimension has its own embedding space and refresh cycle:
+Each dimension has its own refresh cycle and decay curve:
 
 | Dimension | Source | Refresh | Decay |
 |-----------|--------|---------|-------|
-| Capability (model vectors) | Explorer `scan_all()` → `update_vector_space()` | Daily (cron) | None (full overwrite) |
-| Context (task history) | ContextSpace buffer | Per-query | FIFO (500 entries) |
-| Status (online/TPS/load) | Heartbeat probes | Per-probe | Exponential freshness decay |
+| Capability vectors | Explorer `scan_all()` | Daily cron | Full overwrite |
+| Context buffer | ContextSpace | Per-query | FIFO (500 entries) |
+| Status vectors | Heartbeat probes | Per-probe | Exponential freshness decay |
 
-#### Registry (`finder/registry.py`)
+### 4.2 Explorer — Model Discovery
 
-**v2.2 redesign**: Registry is now a pure query layer over Explorer's vector space.
-
-- `roster.yaml` **removed** — all model data lives in Explorer's `worker_vectors.pkl`
-- `register()`, `report_success()`, `sync_roster()` removed
-- `load()` → reads from `worker_vectors.pkl` (auto-triggers Explorer scan if empty)
-- `verify_candidates()` → reads real-time status from `StatusCache` (zero network I/O)
-- `get_status_vector()` → decorator for StatusCache access
-
-The Registry no longer owns model data — it's a thin bridge between Explorer (who discovers) and Heartbeat (who monitors).
-
-#### Explorer (`finder/explorer.py`)
-
-**v2.2 redesign**: Single-source model discovery from Hermes config.yaml.
+Single-source discovery from Hermes `config.yaml` (no CLI, no subprocess):
 
 ```
 scan_all()
-  │
-  ├─ _load_hermes_config()        # Reads config.yaml directly (no CLI)
+  ├─ _load_hermes_config()        # Direct file read
   ├─ _discover_model_roles()      # auxiliary/tts/stt/fallback → role tags
   ├─ for each provider:
-  │    ├─ _get_model_names()      # models list + /v1/models fallback for llamacpp
+  │    ├─ /v1/models API query (metadata enrichment)
   │    ├─ pricing.resolve()       # PricingTable (cache > builtin > default)
-  │    └─ _query_provider_models_api()  # /v1/models metadata enrichment
-  ├─ _add_unreferenced_models()   # Roles without provider entries
-  └─ pricing.save()               # Persist discovered prices
+  │    └─ build_meta_description() → embedding text
+  └─ update_vector_space()        # Write worker_vectors.pkl
 ```
 
-Key design decisions:
+**Local/cloud detection** via URL (not provider name):
+- `localhost`, `127.0.0.1`, `::1` → local
+- `192.168.x.x` → cloud (remote server)
+- All others → cloud
 
-| Decision | v2.1 (old) | v2.2 (new) |
-|----------|-----------|-----------|
-| Discovery channels | 3: llama + hermes CLI + cloud_models | 1: Hermes config.yaml only |
-| Local/cloud detection | Hardcoded provider name check (`llamacpp`) | URL-based (`localhost/127.0.0.1` = local) |
-| Role discovery | None (name-based tag heuristics) | Full Hermes config scan (auxiliary/tts/stt/fallback) |
-| Pricing | Static module-level dicts | `PricingTable` with cache file + update API |
-| Model metadata query | Per-provider /v1/models | Same, with llamacpp fallback |
+**Dynamic PricingTable**: `~/.kafed/pricing_cache.json` → code defaults → conservative estimate ($5/$15 per 1M tokens). Covers 24 models across 6 providers with official pricing sources.
 
-##### Local/Cloud Detection
+### 4.3 Heartbeat — Status Monitoring
 
-```
-from kafed.finder.explorer import _is_local_url
-
-_is_local_url("http://localhost:8000/v1")     → True
-_is_local_url("http://127.0.0.1:11434")       → True
-_is_local_url("https://api.deepseek.com")     → False
-_is_local_url("http://192.168.1.100:8000")    → False
-```
-
-##### Role Discovery
-
-Explorer walks all Hermes config sections to discover which roles each model serves:
-
-| Config section | Example | Role tag |
-|---------------|---------|----------|
-| `model.default` | `deepseek-v4-flash` | `default` |
-| `fallback_model.model` | `leader` | `fallback` |
-| `auxiliary.vision.model` | `deepseek-v4-flash` | `vision` |
-| `auxiliary.compression.model` | `worker_sm2` | `compression` |
-| `auxiliary.title_generation.model` | `worker_md1` | `title_generation` |
-| `auxiliary.session_search.model` | `worker_sm1` | `session_search` |
-| `auxiliary.web_extract.model` | `worker_sm1` | `web_extract` |
-| `tts.*.model / model_id` | `gpt-4o-mini-tts` | `tts` |
-| `stt.*.model / model_id` | `base` | `stt` |
-
-A model can serve multiple roles (e.g., `deepseek-v4-flash` = `default` + `vision`). Roles are stored as both `meta.roles` (list of dicts, full config) and `meta.role_tags` (comma-separated string for embedding filtering).
-
-##### Dynamic PricingTable
-
-`Explorer.PricingTable` replaces module-level static pricing dicts:
+Cron-driven (every 2 minutes), not a daemon:
 
 ```
-Priority chain:
-  pricing_cache.json  >  _BUILTIN_PRICING (code fallback)  >  _DEFAULT_CLOUD_COST ($5/$15)
-
-Cache file: ~/.kafed/pricing_cache.json (KAFED_PRICING_CACHE env to override)
-
-Update API:
-  pt = Explorer.PricingTable()    # auto-load from cache
-  pt.set(provider, model, input, output)     # add/override
-  pt.set_provider_default(provider, i, o)    # provider-level default
-  pt.remove(provider, model)                 # revert to builtin
-  pt.save()                                  # persist to cache
+cron tick → Heartbeat.tick()
+  ├─ need_probe() → freshness check + exponential backoff
+  ├─ probe: local = curl /health, cloud = TCP connect
+  └─ StatusCache.save() → freshness decay applied
 ```
 
-Each `Explorer.scan_all()` call loads pricing from cache at start and saves at end.
-Unknown cloud models default to $5/$15 per 1M tokens (conservative — overestimates to prevent under-cost routing).
-
-##### Model Metadata Schema (`finder/matcher.py`)
+**Exponential freshness decay** — status values interpolate between fresh and neutral as time passes:
 
 ```
-MODEL_META_SCHEMA = {
-    # Identity
-    "name": (str, ""), "provider": (str, "local"), "model_id": (str, ""),
-    # Capacity
-    "context_window": (int, 16384), "max_tokens": (int, 0),
-    # Generation defaults
-    "temperature": (float, 0.6), "top_p": (float, 0.9),
-    "top_k": (int, 40), "repeat_penalty": (float, 1.1),
-    # Capabilities
-    "supports_reasoning": (bool, False), "supports_vision": (bool, False),
-    "supports_functions": (bool, False), "supports_streaming": (bool, True),
-    "supports_json_mode": (bool, False),
-    # Performance & Cost ($/1M tokens)
-    "tps": (int, 0),
-    "cost_per_input_token": (float, 0.0),   # $/1M input tokens
-    "cost_per_output_token": (float, 0.0),  # $/1M output tokens
-    # Knowledge
-    "knowledge_cutoff": (str, ""),
-    # Role tags
-    "role_tags": (str, ""),        # comma-separated for embedding filtering
-    "provider_type": (str, "cloud"),  # local / cloud / on-prem
-    # Status
-    "is_online": (bool, True),
-}
+freshness = exp(-decay_rate × elapsed_s)
+vector[i] = fresh_value × freshness + default × (1 - freshness)
 ```
 
-All matching, filtering, and sorting happens in embedding space — no field-by-field hardcoded comparisons. New schema fields automatically participate through `build_meta_description()` which generates the embedding text.
+A model not probed in 60s has `sta_score ≈ 0.35`, naturally sinking below fresh models without explicit eviction.
 
-#### Heartbeat (`finder/heartbeat.py`)
+---
 
-The Heartbeat is not a daemon — it's a cron-driven probe cycle:
+## 5. Backend: Learning Loop
 
-```
-cron (every 2min) → run_tick()
-  ├─ Heartbeat.tick()
-  │    ├─ registry.load() → worker_names
-  │    ├─ for each name:
-  │    │    ├─ need_probe() → check freshness + next_probe_at + force_probe
-  │    │    └─ _probe_one(name, provider) → StatusEntry
-  │    └─ cache.save()
-  └─ force_probe(name) — sync call from Router
-```
+### 5.1 Analyzer — Solidifier
 
-Two probe modes:
-
-| Mode | Health check | TPS | Latency |
-|------|-------------|-----|---------|
-| Local (llama-server) | `curl /health` | Short /v1/completions | RTT |
-| Cloud (API) | TCP connect to base_url | Historical estimate | RTT |
-
-**Forgetting Curve** — `status_vector` property in `StatusEntry` does not return a raw snapshot. It interpolates between fresh values and neutral defaults based on exponential freshness decay:
+Called after every Agent response:
 
 ```python
-freshness = exp(-decay_rate × elapsed_s)    # 1.0 = just probed, 0.0 = stale
-vector[i] = fresh_value × freshness + stale_default × (1 - freshness)
+solidify(insight, domain="GENERAL", source="agent_turn")
+  → ingest(text, target="kafed")
+    → chunk_document() → quality filter → embed → ChromaDB
+    → EventChecker.after_ingest() → E1-E5 flywheel
 ```
 
-| Dimension | Fresh value | Stale default (uncertain) |
-|-----------|------------|--------------------------|
-| online | 1.0 / 0.0 | 0.5 (unknown) |
-| tps_norm | min(1.0, tps/200) | 0.0 (no assumption) |
-| load | actual 0.0–1.0 | 0.5 (unknown) |
-| latency_ms | actual ms | 1000ms (pessimistic) |
+Metadata preserved per chunk: heading chain, quality score, character count, chunk index.
 
-Result: a model that hasn't been probed in 60s has `sta_score ≈ 0.35` in routing, causing it to naturally sink below freshly probed models — without explicit eviction logic.
+### 5.2 Session Audit
 
-**Backoff scheduling** uses exponential backoff with change detection:
-
-```python
-delay = base × 2^backoff_level  # cap at max
-# base = 10s (local) or 60s (cloud)
-# max = 120s (local) or 600s (cloud)
-```
-
-State unchanged → `backoff_level++` → probe less frequently.
-State changed → `backoff_level = 0` → probe again soon.
-
-### 4.3 Executor Layer
-
-#### DAG Scheduler (`executor/dag.py`)
-
-State machine: `Pending → Ready → Running → Completed / Failed`
-- Automatic retry (1 attempt)
-- Blocked propagation (dependency failure → downstream blocked)
-- Max concurrent tasks: configurable (default 3)
-
-#### Dispatcher (`executor/dispatcher.py`)
-
-Three execution modes:
-1. **Script** — `sh:` prefix → subprocess shell
-2. **Function** — `fn:` prefix → Python callable
-3. **LLM task** — natural language → `delegate_to_subagent()` generates Hermes-format params:
-   ```python
-   {"model": "deepseek-v4-flash",
-    "provider": "deepseek",
-    "params": {"temperature": 0.0, "top_p": 0.9}}
-   ```
-   The Dispatcher does not call models directly — it produces parameters in Hermes' standard format. The Agent (LLM) calls `delegate_task()` with these params.
-
-`dispatch_for()` bridges Finder → Executor: it takes the model selected by `find_partners()` and generates a complete Hermes delegate_task config with generation parameters from the model's metadata schema.
-
-#### Engine (`executor/engine.py`)
-
-Orchestrates DAG execution with the feedback loop. `execute_dag()` takes:
-- `tasks: list[DAGTask]` — task nodes with dependencies
-- `feedback_callback: (task_id, status, result) → FeedbackDecision`
-- Returns `ExecutionReport` with per-task results and summary
-
-### 4.4 Analyzer Layer
-
-#### Pulse (`analyzer/pulse.py`)
-
-Task scheduling engine. Remembers last_run per task, checks if any are due. Runs asynchronously (not a daemon — WSL limitation). High-priority tasks execute immediately; low-priority ones write trigger files.
-
-#### Audit (`analyzer/audit.py`)
-
-Session-level quality auditing. Compares director intent vs execution outcome. Detects patterns (repeated failures, scope creep, etc.). Produces actionable recommendations.
-
-#### KB Audit (`analyzer/kb_audit.py`)
-
-Knowledge base health checks:
-- Domain health — centroid drift, entry distribution
-- Quality scoring — noise patterns, format violations
-- Freshness — stale entry detection
-- Consistency — cross-domain classification conflicts
-- Coverage — domain gaps and overlaps
-
-### 4.5 Knowledge Layer
-
-#### RAG Engine (`knowledge/rag/rag_engine.py`)
-
-`query(text, top_k, domain, soft)` → ranked results
-- `soft=True` enables cross-domain expansion when boundary confidence is low
-- Results include metadata: domain, level, type, source, confidence
-
-#### ContextProvider (`knowledge/context/context_provider.py`)
-
-Pre-EVAL knowledge recall — all sources use **embedding matching** (no keyword extraction):
-
-| Source | Match method | KAFED role |
-|--------|-------------|-----------|
-| RAG (Chroma) | Embedding cosine similarity | Primary recall channel |
-| Wiki | Embedding cosine similarity (domain filter) | Same store, domain-tagged |
-| Memory | Hermes CLI query + embedding | Read-only, Agent-managed |
-| Sessions | Hermes CLI query + embedding | Read-only, Agent-managed |
-| Skills | Hermes CLI query + embedding | Read-only, Agent-managed |
-
-The query embedding vector is included in the ContextBundle so the calling Agent can do its own embedding matching against Memory/Session/Skill stores that only the Agent can access.
-
-#### Classification (`knowledge/classify/`)
-
-Three-tier hierarchical classifier:
+Called at session end. Compares Director intent vs execution outcome:
 
 ```
-Domain (38 clusters) → Level (32, e.g. L1=Language, L4=Company-specific)
-→ Type (98, e.g. declarative, procedural, reasoning, experiential)
+session_end_audit()
+  → AuditEngine.audit(AuditInput)
+    → Rule-based checks (5 default rules, extensible)
+    → Actions: promote to wiki, correct embedding, suggest skill, update SOUL
 ```
 
-All three tiers use the same `Entity + Registry` architecture:
+Rules are registered via `AuditRule` dataclasses — no hardcoded if-else chains.
+
+### 5.3 Knowledge Audit
+
+Offline KB health check (weekly cron):
+
+| Check | What | Cost |
+|-------|------|------|
+| domain_health | Empty/skewed/tiny domains | Metadata only |
+| quality_scan | Noise, short entries (sample) | Sample reads |
+| freshness | Entries >90 days without hits | Timestamp scan |
+| consistency | Near-duplicates, naming conventions | Prefix matching |
+| coverage | Total count adequacy | 3-line check |
+
+---
+
+## 6. Knowledge Layer
+
+### 6.1 RAG Engine
+
+```
+RAGEngine.query(question, top_k, domain, soft=True)
+  → VectorStore.search() → cosine similarity ranking
+  → soft=True: multi-domain expansion when boundary confidence is low
+  → Returns: [{content, score, metadata, domain, level, type}, ...]
+```
+
+### 6.2 ContextProvider
+
+Pre-EVAL multi-source recall. All sources use the same bge-small embedding model:
+
+```
+ContextProvider.recall(query, hexagram_id, domain_hint)
+  → get embedding(query)
+  → RAG: VectorStore.search(top_k=8)
+  → Wiki: VectorStore.search(top_k=4, where={domain: "WIKI"})
+  → Agent sources: Hermes CLI session search
+  → ContextBundle → sorted by score
+```
+
+### 6.3 Classification
+
+Three-tier hierarchical: Domain (47 clusters) → Level (33) → Type (98).
+
+All three use the same `Entity + Registry` architecture:
 - Embedding-based centroid matching
-- Soft boundary for ambiguous inputs
-- K-means with weekly centroid rebuild
+- Soft boundary for ambiguous inputs (expand to multiple clusters when confidence gap < 0.10)
+- MiniBatchKMeans with weekly centroid rebuild
 
-#### Quality (`knowledge/quality/quality.py`)
+### 6.4 Quality Filter
 
-16 noise patterns filtered: HTML tags, ligature artifacts, table corruption, repetitive boilerplate, copyright notices, etc.
+16 noise patterns filtered: HTML tags, ligature artifacts, table corruption, repetitive boilerplate, copyright notices.
 
-#### Flywheel Events (`knowledge/flywheel/event_checker.py`)
+Quality formula (domain-agnostic):
+```
+0.3 + structure×0.25 + entropy×0.20 + length×0.15 - repetition×0.10 - noise×0.10
+```
+
+### 6.5 Flywheel Events (E1–E5)
 
 | Event | Trigger | Action |
 |-------|---------|--------|
-| E1 — Threshold | Domain count crosses milestone | Log, suggest action |
+| E1 — Threshold | Domain count crosses milestone | Log + suggest |
 | E2 — Drift | Centroid moves >5% | Recomputation signal |
-| E3 — Growth | Domain grows >30% | Repack suggestion |
+| E3 — Growth | Domain grows >30% since last repack | Repack suggestion |
 | E4 — Dedup | Similarity >0.95 | Merge candidates |
 | E5 — Stale | No hits in 90 days | Archive suggestion |
 
----
+### 6.6 Knowledge Packages (.kpak)
 
-## 5. Cron Schedule
+Zip archives containing:
+- `manifest.json` — version, domain, entry count, embedding model
+- `knowledge_units.jsonl` — content + metadata
+- `centroid.npy` — domain centroid for structural alignment
+- `seed_rules.yaml` — optional bootstrap rules
 
-Three KAFED-managed cron jobs (registered by bootstrap):
-
-| Job | Schedule | What it does | Depends on |
-|-----|----------|-------------|------------|
-| `kafed-heartbeat` | `*/2 * * * *` | Probes model health, updates status_cache.pkl with freshness decay | Hermes cron (any OS) |
-| `kafed-explorer` | `0 4 * * *` | Discovers models from Hermes config, updates worker_vectors.pkl + pricing_cache.json | Hermes cron (any OS) |
-| `kafed-centroids` | `0 3 * * 0` | Rebuilds knowledge domain centroids | Hermes cron, data present |
-| `kafed-pulse` (WSL) | `*/15 * * * *` | Conditional task scheduler — checks all registered tasks, runs due ones | WSL + Hermes cron |
-
-All cron jobs use `no_agent` mode (script stdout delivered directly), consuming zero LLM tokens.
-
-### Refresh Cycle Architecture
-
-```
-                   Explorer (daily 4am)
-                   ┌──────────────────────────┐
-                   │  Hermes config → models   │
-                   │  Pricing cache → costs     │
-                   │  /v1/models → metadata     │
-                   └────────┬─────────────────┘
-                            │ worker_vectors.pkl (full overwrite)
-                            ▼
-                   Router._vectors (loaded on demand)
-
-                   Heartbeat (every 2min)
-                   ┌──────────────────────────┐
-                   │  need_probe() → probe     │
-                   │  freshness decay apply     │
-                   │  status_vector updated     │
-                   └────────┬─────────────────┘
-                            │ status_cache.pkl (per-entry update)
-                            ▼
-                   Registry.verify_candidates (zero I/O)
-```
+Export/import via CLI: `python -m kafed.kpak pack|unpack|list|info`
 
 ---
 
-## 6. Bootstrap & Installation
+## 7. Scheduler & Compensation
 
-### One-Command Install
+### 7.1 Task Model
 
-```bash
-bash scripts/kafed-bootstrap.sh
-# or: pip install -e . && kafed-bootstrap
+```python
+@dataclass
+class Task(ABC):
+    id: str
+    interval: timedelta
+    last_run: datetime | None
+    max_missed: int = 10
+
+    @abstractmethod
+    def execute(self) -> TaskResult: ...
+    def compensate(self, missed_count: int) -> TaskResult: ...
 ```
 
-### Bootstrap Phases
+### 7.2 WSL Compensation
 
-| Phase | What happens | Auto-detects |
-|-------|-------------|-------------|
-| 1: Environment | Hermes venv, WSL, GPU, llama-server, providers | All passive scans |
-| 2: Config | Generate `~/.kafed/kafed.yaml` with detected values | llama URL, GPU, provider list |
-| 3: Data init | Create dirs + initialize ChromaDB + Explorer vectors + centroids | Embedding model auto-download |
-| 4: Cron | Register heartbeat (2min) + explorer (4am) + centroids (weekly) + pulse (WSL) | Hermes available |
-| 5: Install | `pip install -e .` into Hermes venv (default) or standalone | Hermes venv path |
+WSL cannot guarantee cron execution (Windows host may sleep). Compensation triggers:
 
-### Default Install Target
+1. **Bootstrap** — checks all overdue tasks, runs compensation
+2. **Session start** — lightweight overdue check
+3. **Hermes cron tick** — normal scheduled execution
+4. **Manual** — `kafed scheduler run --compensate`
 
-KAFED prefers installing **into Hermes' existing venv** (`$HERMES_HOME/.venv`) to avoid duplicate dependency overhead. Falls back to standalone `.venv` only when Hermes is not detected. This is determined by the bootstrap at install time, not a compile-time flag.
+Each task's `compensate()` method coalesces multiple missed cycles into a single run (e.g., weekly centroid rebuild that missed 2 weeks runs once).
+
+### 7.3 Built-in Tasks
+
+| Task | Interval | Purpose |
+|------|----------|---------|
+| `heartbeat` | 2min | Probe model health, update status cache |
+| `centroid_flywheel` | 12h | Rebuild domain centroids |
+| `explorer_scan` | 24h | Rediscover models, update vectors + pricing |
+| `knowledge_audit` | 7d | KB health check (domain/quality/freshness) |
+| `flywheel_daily` | 24h | Event check + centroid update |
 
 ---
 
-## 7. Configuration System
+## 8. Configuration System
 
 ### Priority Chain
 
@@ -536,81 +418,46 @@ KAFED prefers installing **into Hermes' existing venv** (`$HERMES_HOME/.venv`) t
 Environment variables  >  kafed.yaml  >  Code defaults
 ```
 
-### Config Properties (`config.py`)
+### Key Properties
 
-| Category | Key Properties |
-|----------|----------------|
-| Paths | `data_dir`, `chroma_path`, `vectors_path`, `backlog_data`, `status_cache_path` |
-| Filenames | `centroids_filename`, `labels_filename`, `event_state_filename` |
+| Category | Properties |
+|----------|-----------|
+| Paths | `data_dir`, `chroma_path`, `vectors_path`, `status_cache_path` |
 | Embedding | `embedding_model` (bge-small-en-v1.5), `embedding_dim` (384) |
-| Chunking | `chunk_max_chars` (500), `chunk_overlap` (50) |
+| Chunking | `chunk_max_chars` (500) |
 | Retrieval | `top_k_default` (5) |
-| Flywheel | `e1_thresholds`, `e2_drift_min`, `e3_repack_growth_pct`, `e4_dedup_threshold`, `e5_stale_days` |
+| Flywheel | E1 thresholds, E2 drift min, E3 growth pct, E4 dedup threshold, E5 stale days |
 | Finder | `fast_route_max_workers` (3), `finder_w_cap/ctx/sta` (0.5/0.3/0.2) |
-| llama-server | `llama_base_url` (env: `KAFED_LLAMA_BASE_URL`, yaml: `llama_server.base_url`) |
-| Heartbeat | `heartbeat_base_local/cloud`, `heartbeat_max_local/cloud`, `freshness_threshold` |
-| Server | `host` (0.0.0.0), `port` (8765 — legacy) |
-| Cloud | `cloud_models` — pre-registered model definitions with real pricing |
-| Pricing cache | `~/.kafed/pricing_cache.json` (env: `KAFED_PRICING_CACHE`) |
-| Roster | `roster_path` — **deprecated** (kept for backward compat, not written) |
+| Heartbeat | base/max intervals (10s/120s local, 60s/600s cloud), freshness threshold (0.3) |
 
-### Secrets (`KafedSecrets`)
+### Secrets
 
-API keys are managed separately via `KafedSecrets`:
-- Loaded from `.env` or environment variables
-- Never appear in logs, `show()`, or config files
-- Accessed via typed properties: `secrets.deepseek_api_key`, `secrets.openai_api_key`
+API keys managed via `KafedSecrets`, loaded from `.env` or environment variables. Never appear in logs, `show()`, or config files.
 
 ---
 
-## 8. Knowledge Lifecycle
+## 9. Knowledge Lifecycle
 
 ```
 1. Ingestion
-   └── PDF/DOCX/HTML → chunker → embedding → ChromaDB
+   └─ solidify() or batch_ingest_files() → chunk → embed → ChromaDB
+
 2. Classification
-   └── Domain · Level · Type metadata added (embedding-based)
+   └─ Domain · Level · Type metadata (embedding-based, weekly centroid rebuild)
+
 3. Retrieval
-   └── RAGEngine.query() → ranked results with soft boundary
-4. Quality Check
-   └── Clean text, score quality, filter noise
-5. Flywheel Events
-   └── E1-E5: threshold, drift, growth, dedup, stale
-6. Knowledge Package
-   └── .kpak export/import for cross-instance sharing
+   └─ RAGEngine.query() + ContextProvider.recall() (soft boundary)
+
+4. Quality
+   └─ 16 noise patterns filtered, domain-agnostic scoring
+
+5. Flywheel
+   └─ E1-E5: threshold, drift, growth, dedup, staleness
+
+6. Sharing
+   └─ .kpak export/import (structure + centroids, no raw data)
 ```
 
-### Cross-Instance Knowledge Sharing
-
-KAFED supports knowledge sharing via `.kpak` files — zip archives containing:
-- `manifest.json` — version, domain, entry count, embedding model
-- `knowledge_units.jsonl` — content + metadata per entry
-- `centroid.npy` — optional domain centroid for structural alignment
-- `seed_rules.yaml` — optional bootstrap rules
-
-Export: `python -m kafed.kpak pack <domain>`
-Import: `python -m kafed.kpak unpack <domain.kpak>`
-
 ---
 
-## 9. Testing & Quality
-
-### Test Suite
-
-45 tests across 7 test files covering:
-- Pipeline orchestration (DAG scheduler, step tracking)
-- Knowledge operations (chunking, quality filtering, classification integration)
-- RAG engine (end-to-end retrieval validation)
-- Audit engine (intent vs outcome comparison)
-
-### Per-Step Quality Gates
-
-Each software change follows:
-1. **Syntax check** — auto-run on file write
-2. **Import verification** — all cross-module imports valid
-3. **Test suite** — full pytest run before commit
-4. **Sensitive data scan** — no personal paths, emails, or API keys
-
----
-
-*KAFED — Knowledge Agent Framework for Embedded Data · v2.2.0 · MIT License*
+*KAFED v3.0 · Knowledge Agent Framework · MIT License*

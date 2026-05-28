@@ -16,7 +16,7 @@ from kafed.knowledge.classify.classify import classify, build_centroids, load_ce
 from kafed.knowledge.classify.domain_registry import DomainRegistry
 from kafed.knowledge.classify.embedding_space import Registry, Entity
 from kafed.knowledge.quality.quality import clean_text, compute_quality_score
-from kafed.knowledge.flywheel.event_checker import EventChecker
+from kafed.knowledge.flywheel_events import EventChecker
 from kafed.knowledge.context.context_provider import ContextProvider, ContextBundle, ContextItem
 
 __all__ = [
