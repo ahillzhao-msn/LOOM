@@ -63,6 +63,9 @@ class FlowEntry:
 
     def compact_detail(self) -> str:
         """根據 action 類型生成精簡摘要（≤20 字符）。"""
+        # 統一異常信號：result 為 ✗ 時直接回傳，不解析 data
+        if self.result == "✗":
+            return "✗"
         d = self.data or {}
 
         if self.action == "問":

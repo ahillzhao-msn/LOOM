@@ -164,28 +164,45 @@ def recommend(user_input: str) -> Recommendation:
 
     # ── Step 1: 問 (5W1H 分解) ──
     with flow_step("D", "問", "5W1H") as ctx:
-        w5 = _step_5w1h(user_input)
-        ctx.data = {"what": w5.what[:10], "where": w5.where[:10], "who": w5.who[:10]}
-        ctx.result = f"{sum(1 for v in [w5.what, w5.why, w5.who, w5.where, w5.when, w5.how] if v)} 維度"
+        try:
+            w5 = _step_5w1h(user_input)
+            ctx.data = {"what": w5.what[:10], "where": w5.where[:10], "who": w5.who[:10]}
+            ctx.result = f"{sum(1 for v in [w5.what, w5.why, w5.who, w5.where, w5.when, w5.how] if v)} 維度"
+        except Exception:
+            ctx.data = {"what": "✗", "where": "✗", "who": "✗"}
+            ctx.result = "✗"
+            w5 = None
 
     # ── Step 2: 卦 ──
     with flow_step("D", "卦", "YiCeNet") as ctx:
-        hexagram = _step_hexagram(user_input)
-        ctx.data = {"compact": hexagram.get("display_compact", "?")}
-        ctx.result = hexagram.get("name", "?")
+        try:
+            hexagram = _step_hexagram(user_input)
+        except Exception:
+            hexagram = {"id": 0, "name": "✗", "q_value": 0.5, "chain": [],
+                        "display_compact": "✗"}
+        ctx.data = {"compact": hexagram.get("display_compact", "✗")}
+        ctx.result = hexagram.get("name", "✗")
 
     # ── Step 3: 召 ──
     with flow_step("D", "召", "LOOM") as ctx:
-        knowledge = _step_recall(user_input, hexagram.get("id", 0))
+        try:
+            knowledge = _step_recall(user_input, hexagram.get("id", 0))
+        except Exception:
+            knowledge = []
         counts = _count_sources(knowledge)
         ctx.data = counts
-        ctx.result = f"{len(knowledge)} 條"
+        ctx.result = f"{len(knowledge)} 條" if knowledge else "✗"
 
     # ── Step 4: 評 ──
     with flow_step("D", "評", "EVAL") as ctx:
-        evaluation = _step_eval(user_input, knowledge, hexagram)
-        ctx.data = {"tier": evaluation.tier, "score": f"{evaluation.score:.2f}"}
-        ctx.result = f"T{evaluation.tier} S={evaluation.score:.2f}"
+        try:
+            evaluation = _step_eval(user_input, knowledge, hexagram)
+            ctx.data = {"tier": evaluation.tier, "score": f"{evaluation.score:.2f}"}
+            ctx.result = f"T{evaluation.tier} S={evaluation.score:.2f}"
+        except Exception:
+            ctx.data = {"tier": "✗", "score": "✗"}
+            ctx.result = "✗"
+            evaluation = None
 
     # ── Step 5: Loom conversation 生命週期（透明）──
     from loom.flow import flow_entries as _flow_entries
@@ -480,7 +497,8 @@ def _step_hexagram(user_input: str, chain_history: list[int] | None = None) -> d
             "display_compact": display_compact,
         }
     except Exception:
-        return {"id": 0, "name": "未占", "q_value": 0.5, "chain": chain_history or []}
+        return {"id": 0, "name": "✗", "q_value": 0.5, "chain": chain_history or [],
+                "display_compact": "✗"}
 
 
 # ══════════════════════════════════════════════════

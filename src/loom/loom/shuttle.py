@@ -20,7 +20,7 @@ from .models import TurnRecord, SessionRecord, ConversationRecord
 # ── 全局開關 ──
 
 def shuttle_enabled() -> bool:
-    env = os.getenv("LOOM_SHUTTLE", os.getenv("LOOM_FLOW", "1"))
+    env = os.getenv("LOOM_SHUTTLE", "1")
     return env.lower() in ("1", "true", "yes", "on")
 
 
