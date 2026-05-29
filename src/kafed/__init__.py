@@ -10,7 +10,7 @@ Backlog 已移除——使用 Hermes 原生 backlog。
 ActionRegistry 已移除——過度設計，未被實際驅動。
 """
 
-__version__ = "3.0.0"
+__version__ = "4.0.0"
 
 # ── 公開 API ──
 from kafed.director.recommend import recommend, Recommendation

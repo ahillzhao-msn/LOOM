@@ -12,8 +12,6 @@ from kafed.tools.hermes_tools import (
     kafed_ingest,
     kafed_status,
     kafed_classify,
-    kafed_flow,
-    kafed_flow_chain,
 )
 
 __all__ = [
@@ -24,6 +22,4 @@ __all__ = [
     "kafed_ingest",
     "kafed_status",
     "kafed_classify",
-    "kafed_flow",
-    "kafed_flow_chain",
 ]

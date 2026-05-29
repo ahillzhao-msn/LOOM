@@ -97,21 +97,9 @@ Hold only: **the natural rhythm** + **commitment to the goal**.
 
 ## Response Flow Visualization 回應流程可視化
 
-Output the flow chain at the top of every response, showing the actual path walked.
-
-### Module Codes
-`K`=Knowledge, `A`=Analyzer, `F`=Finder, `D`=Director
-
-### Node Codes
-**Actions**: 問/卦/召/評/固/省
-**Tools**: 讀/搜/寫/改/行/網/視/識/記/遣 (read/search/write/patch/execute/web/vision/recognize/memorize/delegate)
-
-### Format
-Plain text. No ANSI color codes. No emoji.
-
-```
-D問(5W1H) → D卦(YiCeNet) → D召(KAFED) → D評(EVAL) → [Agent] → D固(solidify)
-```
+KAFED automatically outputs the flow chain to stderr at the start of each turn (compact mode).
+Agent can call `from kafed.flow import flow_mark` to log non-KAFED steps.
+Mode switching and configuration: see KAFED SKILL.md.
 
 ---
 

@@ -2,6 +2,11 @@
 
 每個函數都可在 Hermes 工具層註冊，也可直接 import 使用。
 函數不依賴 Hermes——純 Python import，零進程開銷。
+
+注意：FlowVisualizer 不再是 Hermes 工具。
+流程可視化已整合進 KAFED 內部 logging（kafed.flow），
+由 recommend() / solidify() 自動調用。
+Agent 透過 from kafed.flow import flow_mark 記錄非 KAFED 步驟。
 """
 
 from __future__ import annotations
@@ -23,6 +28,23 @@ def _safe_json(data, error_prefix="KAFED error") -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 # 核心工具
 # ═══════════════════════════════════════════════════════════════════════════
+
+def kafed_loom_close() -> str:
+    """關閉當前 Loom conversation（用戶顯式開新 conversation 時調用）。
+
+    不阻塞——如無活躍 conversation，直接返回 success。
+    recommend() 下一次被調用時自動創建新 conversation。
+    """
+    try:
+        from kafed.loom.manager import manager as loom
+        reward = loom.close_conversation(reason="user_explicit")
+        return _safe_json({
+            "status": "closed" if reward else "no_conversation",
+            "reward": reward or {},
+        })
+    except Exception as e:
+        return _safe_json({"error": str(e)})
+
 
 def kafed_recommend(user_input: str) -> str:
     """卦 → 召 → 評：為 Agent 生成決策素材。
@@ -125,7 +147,7 @@ def kafed_solidify(insight: str, domain: str = "GENERAL",
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 知識工具（保留）
+# 知識工具
 # ═══════════════════════════════════════════════════════════════════════════
 
 def kafed_query(query: str, domain: str = "", k: int = 5,
@@ -210,60 +232,5 @@ def kafed_classify(text: str) -> str:
 
         result = classify(text)
         return _safe_json(result)
-    except Exception as e:
-        return _safe_json({"error": str(e)})
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# FlowVisualizer
-# ═══════════════════════════════════════════════════════════════════════════
-
-def kafed_flow(title: str = "KAFED Flow", mode: str = "compact",
-               stations: str = "[]", end: str = "done") -> str:
-    """可視化 KAFED 流程（stderr 輸出）。
-
-    Args:
-        title: 流程標題
-        mode: 'compact' (箭頭鏈) 或 'detailed' (公交站牌)
-        stations: JSON [[code, action, detail], ...]
-        end: 終點標記
-    """
-    try:
-        from kafed.flow import chain, divider
-        sts = json.loads(stations) if isinstance(stations, str) else stations
-
-        if mode == "detailed":
-            divider(title)
-            station_tuples = [
-                (s[0], s[1], s[2] if len(s) > 2 else "") for s in sts
-            ]
-            chain(title, station_tuples, end=end)
-        else:
-            parts = []
-            for s in sts:
-                m, a = s[0], s[1]
-                d = s[2] if len(s) > 2 else ""
-                parts.append(f"{m}{a}({d})" if d else f"{m}{a}")
-            import sys
-            text = f"[ {title} ]  {' -> '.join(parts)} -> {end}"
-            print(text, file=sys.stderr)
-        return ""
-    except Exception as e:
-        return _safe_json({"error": str(e)})
-
-
-def kafed_flow_chain(steps: str, title: str = "Flow", end: str = "done") -> str:
-    """簡化流程鏈（JSON 步驟 → compact 模式）。
-
-    Args:
-        steps: JSON [{"m": module, "a": action, "d": description}, ...]
-        title: 流程標題
-        end: 終點標記
-    """
-    try:
-        parsed = json.loads(steps) if isinstance(steps, str) else steps
-        sts = [[s["m"], s["a"], s.get("d", "")] for s in parsed]
-        return kafed_flow(title=title, mode="compact",
-                          stations=json.dumps(sts), end=end)
     except Exception as e:
         return _safe_json({"error": str(e)})

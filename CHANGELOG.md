@@ -1,6 +1,41 @@
 # KAFED Changelog
 
-## v3.0.0 (2026-05-27) — Decision Support Refactor
+## v4.0.0 (2026-05-28) — Conversation Context (Loom)
+
+### Architecture
+
+- **New: Conversation Context (Loom)** — Cross-cutting conversation management layer wrapping the recommend → solidify cycle. Weaves individual turns into coherent conversations (Conversation → Session → Turn hierarchy).
+- **New: ARCHITECTURE.md Section 3** — Full documentation of the Loom architecture, three-tier model, auto-integration, and Producer/Consumer flywheel interface.
+
+### New Modules
+
+- **`loom/manager.py`** — `_ConversationManager` singleton. `start_turn()`, `end_turn()`, `get_or_create_conversation()`, `close_conversation()`, `record_solidify()`, `reward_for_flywheel()`.
+- **`loom/models.py`** — Three-tier data models: `TurnRecord`, `SessionRecord`, `ConversationRecord` with reward signals, hexagram pattern detection, key turn scoring, and session summarization.
+- **`loom/factory.py`** — `TurnFactory`, `SessionFactory`, `ConversationFactory` with create/from_recommend/from_dict/is_expired/should_close methods.
+- **`loom/shuttle.py`** — Shuttle (梭子) visualization: `flow_chain()`, `hexagram_trail()`, `session_tapestry()`, `conversation_tapestry()`. Optional YiCeNet dependency with graceful fallback.
+
+### Integration
+
+- **`solidify()` auto-records to active Loom conversation** — `analyzer/solidifier.py` now calls `loom.record_solidify()` automatically when a conversation is active. Zero Agent code change.
+- **`close_conversation()` submits to YiCeNet flywheel** — Calls `submit_trajectory()` with complete reward signal. Non-fatal (silent no-op when YiCeNet not installed).
+- **External Producer API** — `submit_trajectory()` standard interface for any module to feed training data to YiCeNet's flywheel buffer.
+
+### Documentation
+
+- **ARCHITECTURE.md** — New Section 3 (Conversation Context / Loom) with architecture diagram, three-tier table, auto-integration examples, Shuttle modes, Producer/Consumer diagram, design decisions.
+- **docs/loom-architecture.md** — Full technical reference: data model, lifecycle, reward signal table, Shuttle API, Factory API.
+- **README.md** — Added Loom section (concept-level).
+
+### Fixes
+
+- **`loom/factory.py`** — `from_recommend()` now accepts both FlowEntry objects and simple tuples (tuple compatibility for Agent code and tests).
+- **`loom/shuttle.py`** — `hexagram_trail()` graceful fallback when YiCeNet not installed (uses `#N` instead of Unicode hexagram symbols).
+
+### Tests
+
+- **`tests/test_loom.py`** — 34 new tests: Conversation lifecycle (5), Turn lifecycle (5), Solidify integration (3), Reward/flywheel (3), Shuttle (7), Model properties (8), Solidifier API (2).
+
+---
 
 ### Architecture Redesign
 

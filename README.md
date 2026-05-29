@@ -7,7 +7,7 @@
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10+-blue.svg">
   <img alt="Chunks" src="https://img.shields.io/badge/Chunks-143K+-green.svg">
   <img alt="Domains" src="https://img.shields.io/badge/Domains-47-purple.svg">
-  <img alt="Version" src="https://img.shields.io/badge/Version-3.0.0-red.svg">
+  <img alt="Version" src="https://img.shields.io/badge/Version-4.0.0-red.svg">
   <img alt="Tests" src="https://img.shields.io/badge/Tests-PASS-brightgreen.svg">
 </p>
 
@@ -147,6 +147,25 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical design.
 4. **Privacy-first sharing** — `.kpak` packages share structure and centroids, never raw data or model weights. Export with confidence.
 
 5. **Quality over quantity** — every chunk is scored. Noise is filtered before storage, not during retrieval.
+
+---
+
+## Loom (织机) — Conversation-Level Session Management
+
+Loom weaves scattered turns into coherent conversations, providing the flywheel with complete decision trajectories.
+
+```
+Conversation (logical entity) → 1:n → Session (technical slice) → 1:n → Turn (atomic round)
+```
+
+**Key features:**
+- **Cross-session continuity** — Conversations survive agent restarts, idle timeouts, and system reboots
+- **Full trajectory capture** — Every turn records hexagram, knowledge recall, EVAL score, solidify events, token usage
+- **Reward aggregation** — On close, produces a rich reward signal package for the flywheel (correction rate, hexagram evolution, knowledge reuse, token efficiency)
+- **Auto-integration** — `solidify()` automatically records to the active conversation; `close_conversation()` submits to YiCeNet's flywheel
+- **Shuttle visualization** — Four weave modes: flow chain, hexagram trail, session tapestry, conversation tapestry
+
+See [docs/loom-architecture.md](docs/loom-architecture.md) for the full design and API reference.
 
 ---
 

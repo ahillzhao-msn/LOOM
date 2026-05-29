@@ -1,6 +1,6 @@
 # KAFED Architecture
 
-> Version 3.0.0 · Decision-Support Engine · Director · Finder · Analyzer · Knowledge · Scheduler
+> Version 4.0.0 · Decision-Support Engine · Loom · Director · Finder · Analyzer · Knowledge · Scheduler
 
 ---
 
@@ -8,13 +8,14 @@
 
 1. [Design Philosophy](#1-design-philosophy)
 2. [System Overview](#2-system-overview)
-3. [Frontend: Decision Support](#3-frontend-decision-support)
-4. [Finder: Model Matching](#4-finder-model-matching)
-5. [Backend: Learning Loop](#5-backend-learning-loop)
-6. [Knowledge Layer](#6-knowledge-layer)
-7. [Scheduler & Compensation](#7-scheduler--compensation)
-8. [Configuration System](#8-configuration-system)
-9. [Knowledge Lifecycle](#9-knowledge-lifecycle)
+3. [Conversation Context (Loom)](#3-conversation-context-loom)
+4. [Frontend: Decision Support](#4-frontend-decision-support)
+5. [Finder: Model Matching](#5-finder-model-matching)
+6. [Backend: Learning Loop](#6-backend-learning-loop)
+7. [Knowledge Layer](#7-knowledge-layer)
+8. [Scheduler & Compensation](#8-scheduler--compensation)
+9. [Configuration System](#9-configuration-system)
+10. [Knowledge Lifecycle](#10-knowledge-lifecycle)
 
 ---
 
@@ -117,9 +118,111 @@ KAFED is built on a three-level framework:
 
 ---
 
-## 3. Frontend: Decision Support
+## 3. Conversation Context (Loom)
 
-### 3.1 Director — `recommend()`
+Loom (织机) is a cross-cutting conversation management layer that weaves individual turns into coherent conversations. It wraps the recommend → solidify cycle, providing:
+
+- **Cross-session continuity** — Conversations survive agent restarts, idle timeouts, and system reboots
+- **Full trajectory capture** — Every turn records hexagram, knowledge recall, EVAL score, solidify events, token usage
+- **Reward aggregation** — On conversation close, produces a rich reward signal package for the YiCeNet flywheel
+- **Shuttle visualization** — Four weave modes for inspecting conversation state at any granularity
+
+### Architecture
+
+```
+Loom wraps the entire recommend → Agent → solidify cycle:
+
+  ┌── Loom Conversation (logical entity) ──────────────────┐
+  │                                                         │
+  │  ┌── Session (technical slice) ──────────────────┐     │
+  │  │                                                 │     │
+  │  │  ┌───── Turn ─────┐  ┌───── Turn ─────┐       │     │
+  │  │  │ recommend()    │  │ recommend()    │       │     │
+  │  │  │ Agent acts     │  │ Agent acts     │  ...  │     │
+  │  │  │ solidify() ───►│  │ solidify() ───►│       │     │
+  │  │  └────────────────┘  └────────────────┘       │     │
+  │  │                         ↑ session boundary    │     │
+  │  └───────────────────────────────────────────────┘     │
+  │                                                         │
+  │  close_conversation()                                    │
+  │    └─ reward_for_flywheel() → submit_trajectory()      │
+  │       → YiCeNet flywheel buffer                         │
+  └─────────────────────────────────────────────────────────┘
+```
+
+### Three Tiers
+
+| Tier | Entity | Scope | Boundaries |
+|------|--------|-------|------------|
+| 1 | **Turn** | One recommend→act→solidify cycle | Natural turn boundary |
+| 2 | **Session** | Technical slice | 30-min idle, restart, explicit close |
+| 3 | **Conversation** | Logical entity, cross-session | 24-hour idle, semantic drift |
+
+Tier 1–2 boundaries are technical (idle timeout, restart). Tier 3 is the only logical boundary — a conversation persists across idle and restart.
+
+### Auto Integration
+
+`solidify()` automatically records to the active Loom conversation if one exists — zero additional Agent code:
+
+```python
+from kafed.analyzer.solidifier import solidify
+
+# If Loom has an active conversation, solidify auto-records
+solidify("Found: architecture coupling too tight", domain="ARCH")
+#     ↓
+# loom.record_solidify(result)   ← automatic
+```
+
+`close_conversation()` submits the aggregated reward signal to YiCeNet's flywheel:
+
+```python
+from kafed.loom.manager import manager as loom
+
+reward = loom.close_conversation()
+# reward = {n_turns, hexagram_evolution, correction_rate, token_efficiency, ...}
+```
+
+### Shuttle (梭子)
+
+Shuttle provides four weave modes for inspecting conversation state:
+
+```
+flow_chain(steps)       → D問 -> D卦(困) -> D召(K[3]) -> D評(T2)
+hexagram_trail(ids)     → ䷮ → ䷉ · ䷉ → ䷲ (跳躍)
+session_tapestry(s)     → Session abc123 · 3輪 · 2次固化 · 卦: ䷮→䷉
+conversation_tapestry(c)→ 📜 Conversation def456 · 1 sessions · 2輪
+```
+
+### Producer/Consumer (YiCeNet Flywheel)
+
+Loom is one of potentially many "external producers" feeding the YiCeNet flywheel:
+
+```
+                    submit_trajectory(data)
+                    ┌──────────┐
+Loom ──────────────►│          │
+                    │  YiCeNet  │
+Other producers ───►│  FLYWHEEL├──→ flywheel_buffer.jsonl ──→ RL train
+                    │  _BUFFER │
+                    └──────────┘
+```
+
+The API is non-fatal — `submit_trajectory()` silently no-ops when YiCeNet isn't installed.
+
+### Key Design Decisions
+
+1. **Agent zero-participation** — Loom operates transparently. `solidify()` auto-records; the Agent doesn't call loom APIs for basic lifecycle
+2. **Non-fatal dependencies** — Neither Loom nor solidify() break when YiCeNet is absent
+3. **Memory buffer, not persistent** — `FLYWHEEL_BUFFER` is an in-memory list consumed each cron cycle. No IO overhead during conversation
+4. **Tuple compatibility** — `start_turn_from_recommend()` accepts both FlowEntry objects and simple tuples, so Agent code and tests can use either
+
+See [docs/loom-architecture.md](docs/loom-architecture.md) for the full design and API reference.
+
+---
+
+## 4. Frontend: Decision Support
+
+### 4.1 Director — `recommend()`
 
 The single entry point. Called every turn before the Agent acts.
 
@@ -185,9 +288,9 @@ Score = max(F1..F5). Tier 1 (score≤1), Tier 2 (score=2), Tier 3 (score=3). The
 
 ---
 
-## 4. Finder: Model Matching
+## 5. Finder: Model Matching
 
-### 4.1 Router — `find_partners(briefs)`
+### 5.1 Router — `find_partners(briefs)`
 
 The single entry point. Accepts N task descriptions, returns N ranked candidate lists.
 
@@ -220,7 +323,7 @@ Each dimension has its own refresh cycle and decay curve:
 | Context buffer | ContextSpace | Per-query | FIFO (500 entries) |
 | Status vectors | Heartbeat probes | Per-probe | Exponential freshness decay |
 
-### 4.2 Explorer — Model Discovery
+### 5.2 Explorer — Model Discovery
 
 Single-source discovery from Hermes `config.yaml` (no CLI, no subprocess):
 
@@ -242,7 +345,7 @@ scan_all()
 
 **Dynamic PricingTable**: `~/.kafed/pricing_cache.json` → code defaults → conservative estimate ($5/$15 per 1M tokens). Covers 24 models across 6 providers with official pricing sources.
 
-### 4.3 Heartbeat — Status Monitoring
+### 5.3 Heartbeat — Status Monitoring
 
 Cron-driven (every 2 minutes), not a daemon:
 
@@ -264,9 +367,9 @@ A model not probed in 60s has `sta_score ≈ 0.35`, naturally sinking below fres
 
 ---
 
-## 5. Backend: Learning Loop
+## 6. Backend: Learning Loop
 
-### 5.1 Analyzer — Solidifier
+### 6.1 Analyzer — Solidifier
 
 Called after every Agent response:
 
@@ -279,7 +382,7 @@ solidify(insight, domain="GENERAL", source="agent_turn")
 
 Metadata preserved per chunk: heading chain, quality score, character count, chunk index.
 
-### 5.2 Session Audit
+### 6.2 Session Audit
 
 Called at session end. Compares Director intent vs execution outcome:
 
@@ -292,7 +395,7 @@ session_end_audit()
 
 Rules are registered via `AuditRule` dataclasses — no hardcoded if-else chains.
 
-### 5.3 Knowledge Audit
+### 6.3 Knowledge Audit
 
 Offline KB health check (weekly cron):
 
@@ -306,9 +409,9 @@ Offline KB health check (weekly cron):
 
 ---
 
-## 6. Knowledge Layer
+## 7. Knowledge Layer
 
-### 6.1 RAG Engine
+### 7.1 RAG Engine
 
 ```
 RAGEngine.query(question, top_k, domain, soft=True)
@@ -317,7 +420,7 @@ RAGEngine.query(question, top_k, domain, soft=True)
   → Returns: [{content, score, metadata, domain, level, type}, ...]
 ```
 
-### 6.2 ContextProvider
+### 7.2 ContextProvider
 
 Pre-EVAL multi-source recall. All sources use the same bge-small embedding model:
 
@@ -330,7 +433,7 @@ ContextProvider.recall(query, hexagram_id, domain_hint)
   → ContextBundle → sorted by score
 ```
 
-### 6.3 Classification
+### 7.3 Classification
 
 Three-tier hierarchical: Domain (47 clusters) → Level (33) → Type (98).
 
@@ -339,7 +442,7 @@ All three use the same `Entity + Registry` architecture:
 - Soft boundary for ambiguous inputs (expand to multiple clusters when confidence gap < 0.10)
 - MiniBatchKMeans with weekly centroid rebuild
 
-### 6.4 Quality Filter
+### 7.4 Quality Filter
 
 16 noise patterns filtered: HTML tags, ligature artifacts, table corruption, repetitive boilerplate, copyright notices.
 
@@ -348,7 +451,7 @@ Quality formula (domain-agnostic):
 0.3 + structure×0.25 + entropy×0.20 + length×0.15 - repetition×0.10 - noise×0.10
 ```
 
-### 6.5 Flywheel Events (E1–E5)
+### 7.5 Flywheel Events (E1–E5)
 
 | Event | Trigger | Action |
 |-------|---------|--------|
@@ -358,7 +461,7 @@ Quality formula (domain-agnostic):
 | E4 — Dedup | Similarity >0.95 | Merge candidates |
 | E5 — Stale | No hits in 90 days | Archive suggestion |
 
-### 6.6 Knowledge Packages (.kpak)
+### 7.6 Knowledge Packages (.kpak)
 
 Zip archives containing:
 - `manifest.json` — version, domain, entry count, embedding model
@@ -370,9 +473,9 @@ Export/import via CLI: `python -m kafed.kpak pack|unpack|list|info`
 
 ---
 
-## 7. Scheduler & Compensation
+## 8. Scheduler & Compensation
 
-### 7.1 Task Model
+### 8.1 Task Model
 
 ```python
 @dataclass
@@ -387,7 +490,7 @@ class Task(ABC):
     def compensate(self, missed_count: int) -> TaskResult: ...
 ```
 
-### 7.2 WSL Compensation
+### 8.2 WSL Compensation
 
 WSL cannot guarantee cron execution (Windows host may sleep). Compensation triggers:
 
@@ -398,7 +501,7 @@ WSL cannot guarantee cron execution (Windows host may sleep). Compensation trigg
 
 Each task's `compensate()` method coalesces multiple missed cycles into a single run (e.g., weekly centroid rebuild that missed 2 weeks runs once).
 
-### 7.3 Built-in Tasks
+### 8.3 Built-in Tasks
 
 | Task | Interval | Purpose |
 |------|----------|---------|
@@ -410,7 +513,7 @@ Each task's `compensate()` method coalesces multiple missed cycles into a single
 
 ---
 
-## 8. Configuration System
+## 9. Configuration System
 
 ### Priority Chain
 
@@ -436,7 +539,7 @@ API keys managed via `KafedSecrets`, loaded from `.env` or environment variables
 
 ---
 
-## 9. Knowledge Lifecycle
+## 10. Knowledge Lifecycle
 
 ```
 1. Ingestion
