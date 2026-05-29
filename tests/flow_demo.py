@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""KAFED v3.0 Flow Demo — 公交站牌風格展示。
+"""LOOM v3.0 Flow Demo — 公交站牌風格展示。
 
 兩種模式對比：
   compact  — 箭頭串聯（回應標頭用）: D問(SAP) → D卦(Q=0.72) → D召(8條) → D評(T3)
@@ -9,8 +9,8 @@
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from kafed.flow import set_flow_enabled, chain, divider, hop, stop
-from kafed.director.hexagram import hexagram_display, hexagram_chain_compact
+from loom.flow import set_flow_enabled, chain, divider, hop, stop
+from loom.director.hexagram import hexagram_display, hexagram_chain_compact
 
 set_flow_enabled(True)
 
@@ -26,7 +26,7 @@ def demo_case1():
     print()
 
     # ── detailed 模式（公交站牌）──
-    chain("KAFED 決策素材", [
+    chain("LOOM 決策素材", [
         ("D", "問", "5W1H: what=分析 where=SAP PM 工單"),
         ("D", "卦", f"{hexagram_display(5)} — 需卦：等待時機"),
         ("D", "召", "ContextProvider → RAG+Wiki 全源召回 3 條"),
@@ -39,7 +39,7 @@ def demo_case1():
         ("✏️", "生成", "回應 — 增強方案"),
     ], end="回應完成")
 
-    chain("KAFED 閉環", [
+    chain("LOOM 閉環", [
         ("💡", "洞察", "IW32 增強: 先讀現有 exit 再擴展"),
         ("💾", "固化", "solidify → KM 寫入"),
         ("🔄", "飛輪", "觸發 E1 ingest 事件"),
@@ -49,8 +49,8 @@ def demo_case1():
 
 
 def demo_case2():
-    """Case 2: 複雜任務 — 重構 KAFED embedding。"""
-    divider("══════ Case 2: 重構 KAFED embedding ══════")
+    """Case 2: 複雜任務 — 重構 LOOM embedding。"""
+    divider("══════ Case 2: 重構 LOOM embedding ══════")
     user_input = "重構KAFED的embedding模組：代碼審計 + 多後端Strategy + 補測試"
 
     # Case 2 compact — 含卦鏈
@@ -63,8 +63,8 @@ def demo_case2():
     print()
 
     # ── detailed ──
-    chain("KAFED 決策素材", [
-        ("D", "問", "5W1H: what=重構 where=KAFED embedding"),
+    chain("LOOM 決策素材", [
+        ("D", "問", "5W1H: what=重構 where=LOOM embedding"),
         ("D", "卦", f"{hexagram_display(1)} — 乾卦：順勢而為 "
          f"[鏈: {hexagram_chain_compact(chain_ids)}]"),
         ("D", "召", "召回 8 條 (embedding.py, rag_engine.py, chunker.py)"),
@@ -92,7 +92,7 @@ def demo_case2():
     ], end="聚合完成")
 
     try:
-        from kafed.finder.router import Router
+        from loom.finder.router import Router
         router = Router()
         results = router.find_partners(briefs[:2])
 
@@ -120,7 +120,7 @@ def demo_case2():
         ("🚀", "T3", "測試編寫 → deepseek-v4-flash"),
     ], end="3/3 子任務完成")
 
-    chain("KAFED 閉環", [
+    chain("LOOM 閉環", [
         ("💡", "洞察", "embedding 後端: Strategy + Factory 模式"),
         ("💡", "教訓", "bge-small 384d 企業文檔同質性 → silhouette 低"),
         ("💾", "固化", "solidify → KM 寫入 2 條"),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""KAFED v3.0 KM 攝入測試 — 雙場景對比。
+"""LOOM v3.0 KM 攝入測試 — 雙場景對比。
 
 Scenario A: 線上 Analyzer 攝入（Agent 回應後 solidify）
   Agent turn → solidify(insight) → ingest → chunk → embed → Chroma → event
@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from kafed.flow import set_flow_enabled, chain, divider, hop, stop
+from loom.flow import set_flow_enabled, chain, divider, hop, stop
 set_flow_enabled(True)
 
 TEST_DOMAIN = "KM_INGEST_TEST"
@@ -24,7 +24,7 @@ TEST_DOMAIN = "KM_INGEST_TEST"
 def cleanup():
     """移除測試寫入的 chunks（保持 Chroma 乾淨）。"""
     try:
-        from kafed.knowledge.rag.vector_store import VectorStore
+        from loom.knowledge.rag.vector_store import VectorStore
         vs = VectorStore()
         results = vs._collection.get(
             where={"domain": TEST_DOMAIN},
@@ -56,19 +56,19 @@ def scenario_a_online():
         "2. 確認增強名稱不與現有 APPEND 衝突\n"
         "3. 在 CMOD 中實現時優先使用已有 exit",
 
-        "# KAFED Pipeline 重構教訓\n\n## 核心洞察\n"
-        "將 Director 的拆子任務職責移除是正確的——Agent 自己做決策比 KAFED 替它決策更自然。"
-        "KAFED 的價值在提供素材（卦+知識+EVAL），不在替 Agent 思考。\n\n"
-        "## 設計原則\n- 不嵌套 Agent 框架：KAFED 是決策支援層，不是執行層\n"
+        "# LOOM Pipeline 重構教訓\n\n## 核心洞察\n"
+        "將 Director 的拆子任務職責移除是正確的——Agent 自己做決策比 LOOM 替它決策更自然。"
+        "LOOM 的價值在提供素材（卦+知識+EVAL），不在替 Agent 思考。\n\n"
+        "## 設計原則\n- 不嵌套 Agent 框架：LOOM 是決策支援層，不是執行層\n"
         "- Finder 保持獨立：Agent 決定拆子任務後主動調用 find_partners\n"
         "- 知識閉環不阻塞：solidify 非同步，不延遲 Agent 回應",
     ]
 
     # ── Flow: solidify ──
-    from kafed.analyzer.solidifier import solidify
-    from kafed.knowledge.rag.vector_store import VectorStore
-    from kafed.knowledge.rag.rag_engine import RAGEngine
-    from kafed.knowledge.flywheel_events import EventChecker
+    from loom.analyzer.solidifier import solidify
+    from loom.knowledge.rag.vector_store import VectorStore
+    from loom.knowledge.rag.rag_engine import RAGEngine
+    from loom.knowledge.flywheel_events import EventChecker
 
     results = []
     for i, insight in enumerate(insights):
@@ -92,7 +92,7 @@ def scenario_a_online():
 
     test_queries = [
         ("IW32 增強字段衝突", "應召回 IW32 增強模式"),
-        ("KAFED 拆子任務設計", "應召回 Pipeline 重構教訓"),
+        ("LOOM 拆子任務設計", "應召回 Pipeline 重構教訓"),
     ]
 
     chain("RAG 查詢驗證", [
@@ -152,22 +152,22 @@ def scenario_b_offline():
     divider("══════ Scenario B: 離線批量攝入 (batch_ingest_files) ══════")
 
     # ── 創建模擬專案文檔 ──
-    tmpdir = tempfile.mkdtemp(prefix="kafed_test_docs_")
+    tmpdir = tempfile.mkdtemp(prefix="loom_test_docs_")
     docs = {
         "architecture.md": (
-            "# KAFED 架構設計\n\n"
+            "# LOOM 架構設計\n\n"
             "## 五層飛輪\n"
-            "KAFED 由五層組成：Director(決策支援)、Finder(模型匹配)、"
+            "LOOM 由五層組成：Director(決策支援)、Finder(模型匹配)、"
             "Knowledge(知識管理)、Analyzer(學習閉環)、Scheduler(任務排程)。\n\n"
             "Executor 層已在 v3.0 移除，改為委託 Hermes delegate_task。\n\n"
             "## 設計原則\n"
-            "- 不嵌套 Agent 框架：KAFED 是決策支援層\n"
+            "- 不嵌套 Agent 框架：LOOM 是決策支援層\n"
             "- 嵌入空間優先：所有匹配和分類都在向量空間中進行\n"
             "- 知識閉環非同步：solidify 不阻塞 Agent 回應\n\n"
             "## 核心 API\n"
-            "- `kafed_recommend(user_input)` — 決策素材（每輪強制）\n"
-            "- `kafed_find_partners(briefs)` — 模型匹配（拆子任務時）\n"
-            "- `kafed_solidify(insight)` — 知識固化（回應後）"
+            "- `loom_recommend(user_input)` — 決策素材（每輪強制）\n"
+            "- `loom_find_partners(briefs)` — 模型匹配（拆子任務時）\n"
+            "- `loom_solidify(insight)` — 知識固化（回應後）"
         ),
         "embedding_guide.md": (
             "# Embedding 模組使用指南\n\n"
@@ -180,12 +180,12 @@ def scenario_b_offline():
             "- ChromaDB 持久化，支援分批查詢 (>1000 條)\n\n"
             "## 使用方式\n"
             "```python\n"
-            "from kafed.knowledge.rag.embedding import embed_texts\n"
+            "from loom.knowledge.rag.embedding import embed_texts\n"
             "vecs = embed_texts(['text1', 'text2'])\n"
             "```"
         ),
         "changelog.md": (
-            "# KAFED v3.0 CHANGELOG\n\n"
+            "# LOOM v3.0 CHANGELOG\n\n"
             "## 架構變更\n"
             "- 移除 Executor 層（委託 Hermes delegate_task）\n"
             "- 移除 Backlog（使用 Hermes 原生）\n"
@@ -194,7 +194,7 @@ def scenario_b_offline():
             "- 新增 director/recommend.py（唯一入口）\n\n"
             "## API 簡化\n"
             "- 舊: 9 步 Pipeline + 3 變體\n"
-            "- 新: kafed_recommend() + kafed_solidify()\n\n"
+            "- 新: loom_recommend() + loom_solidify()\n\n"
             "## KM 增強\n"
             "- ingest 保留 chunk_document 完整元數據\n"
             "- batch_ingest_files 支援離線批量攝入"
@@ -207,9 +207,9 @@ def scenario_b_offline():
     hop("📂", "模擬文檔", f"{tmpdir} ({len(docs)} files)")
 
     # ── Flow: batch_ingest_files ──
-    from kafed.knowledge.ingest import batch_ingest_files
-    from kafed.knowledge.rag.vector_store import VectorStore
-    from kafed.knowledge.rag.rag_engine import RAGEngine
+    from loom.knowledge.ingest import batch_ingest_files
+    from loom.knowledge.rag.vector_store import VectorStore
+    from loom.knowledge.rag.rag_engine import RAGEngine
 
     file_paths = [str(Path(tmpdir, f)) for f in docs]
 
@@ -234,7 +234,7 @@ def scenario_b_offline():
     rag = RAGEngine(vs)
 
     test_queries = [
-        ("KAFED 五層架構", "architecture.md → 五層飛輪章節"),
+        ("LOOM 五層架構", "architecture.md → 五層飛輪章節"),
         ("embedding 後端切換", "embedding_guide.md → 支援的後端"),
         ("v3.0 Scheduler 功能", "changelog.md → Scheduler WSL 補償"),
     ]

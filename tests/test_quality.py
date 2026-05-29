@@ -1,6 +1,6 @@
 """测试 quality.py 的清洗模式。"""
 
-from kafed.knowledge.quality.quality import clean_text
+from loom.knowledge.quality.quality import clean_text
 
 
 def test_clean_html_br():

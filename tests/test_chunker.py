@@ -1,6 +1,6 @@
 """测试 chunker 的分块逻辑。"""
 
-from kafed.knowledge.rag.chunker import chunk_document
+from loom.knowledge.rag.chunker import chunk_document
 
 
 def test_chunk_with_multiple_headers():

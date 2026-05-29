@@ -25,10 +25,10 @@ import numpy as np
 
 sys.stdout.reconfigure(line_buffering=True)
 
-from kafed.config import get_config
-from kafed.knowledge.rag.vector_store import VectorStore
-from kafed.knowledge.classify.domain_registry import DomainRegistry
-from kafed.knowledge.classify.embedding_space import Entity, name_to_uuid
+from loom.config import get_config
+from loom.knowledge.rag.vector_store import VectorStore
+from loom.knowledge.classify.domain_registry import DomainRegistry
+from loom.knowledge.classify.embedding_space import Entity, name_to_uuid
 
 CLUSTER_NAMES = {
     0: "SAP workflow technical documentation",

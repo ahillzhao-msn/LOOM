@@ -3,16 +3,16 @@ requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kafed"
+name = "loom"
 version = "4.0.0"
-description = "Knowledge Agent Framework for Embedded Data — Five-layer Intelligent Flywheel"
+description = "Loom — Conversation-level Knowledge Management Engine for AI Agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-keywords = ["rag", "knowledge-management", "embeddings"]
+keywords = ["rag", "knowledge-management", "embeddings", "conversation", "loom"]
 
 authors = [
-    {name = "KAFED Contributors"},
+    {name = "Loom Contributors"},
 ]
 
 classifiers = [
@@ -39,7 +39,7 @@ dev = ["pytest>=8", "pytest-cov", "ruff"]
 where = ["src"]
 
 [project.scripts]
-kafed-bootstrap = "kafed.install.bootstrap:main"
-kafed-heartbeat = "kafed.finder.heartbeat:run_tick"
-kafed-init = "kafed.finder.heartbeat:ensure_running"
-kafed-explore = "kafed.finder.explorer:scan"
+loom-bootstrap = "loom.install.bootstrap:main"
+loom-heartbeat = "loom.finder.heartbeat:run_tick"
+loom-init = "loom.finder.heartbeat:ensure_running"
+loom-explore = "loom.finder.explorer:scan"

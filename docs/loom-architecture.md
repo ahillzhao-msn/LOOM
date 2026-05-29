@@ -140,7 +140,7 @@ Shuttle.display(tapestry)  # 輸出到 stderr
 
 ### 全局開關
 
-環境變量 `KAFED_SHUTTLE` 或 `KAFED_FLOW` 控制輸出：
+環境變量 `LOOM_SHUTTLE` 或 `KAFED_FLOW` 控制輸出：
 - `1` / `true` / `yes` / `on` — 啟用
 - 其他值或未設定 — 禁用
 

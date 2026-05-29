@@ -16,7 +16,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def reset_manager():
     """每個測試前重置 Loom 單例狀態。"""
-    from kafed.loom.manager import manager
+    from loom.loom.manager import manager
     manager._conversation = None
     manager._current_turn = None
     yield
@@ -24,13 +24,13 @@ def reset_manager():
 
 @pytest.fixture
 def loom():
-    from kafed.loom.manager import manager
+    from loom.loom.manager import manager
     return manager
 
 
 @pytest.fixture
 def loom_models():
-    from kafed.loom import models
+    from loom.loom import models
     return models
 
 
@@ -80,13 +80,13 @@ class TestTurnLifecycle:
     def test_start_turn_creates(self, loom):
         """start_turn 應創建 turn 並自動創建 conversation/session。"""
         turn = loom.start_turn(
-            query="分析 KAFED 架構",
+            query="分析 LOOM 架構",
             hexagram={"id": 29, "q_value": 0.7},
             knowledge={"rag": 3},
             eval_score={"tier": 1, "score": 0.85},
         )
         assert turn.turn_id is not None
-        assert turn.query == "分析 KAFED 架構"
+        assert turn.query == "分析 LOOM 架構"
         assert turn.hexagram["id"] == 29
         assert loom.status()["has_conversation"] is True
         assert loom.status()["active_session_turns"] == 1
@@ -197,22 +197,22 @@ class TestReward:
 class TestShuttle:
     def test_flow_chain(self):
         """flow_chain 應返回箭頭分隔的鏈路字串。"""
-        from kafed.loom.shuttle import Shuttle
+        from loom.loom.shuttle import Shuttle
         steps = ["D問(5W1H)", "D卦(困)", "D召(K[3])", "D評(T2)"]
         out = Shuttle.flow_chain(steps, end="D固")
         assert out == "D問(5W1H) -> D卦(困) -> D召(K[3]) -> D評(T2) -> D固"
 
     def test_flow_chain_no_end(self):
-        from kafed.loom.shuttle import Shuttle
+        from loom.loom.shuttle import Shuttle
         out = Shuttle.flow_chain(["A", "B"])
         assert out == "A -> B"
 
     def test_hexagram_trail_empty(self):
-        from kafed.loom.shuttle import Shuttle
+        from loom.loom.shuttle import Shuttle
         assert Shuttle.hexagram_trail([]) == ""
 
     def test_hexagram_trail_single(self):
-        from kafed.loom.shuttle import Shuttle
+        from loom.loom.shuttle import Shuttle
         trail = Shuttle.hexagram_trail([46])
         assert isinstance(trail, str)
         assert len(trail) > 0
@@ -220,13 +220,13 @@ class TestShuttle:
         assert "䷮" in trail or "#46" in trail or "䷭" in trail  # 47→困, 47+1=48→井→䷯... depends on mapping
 
     def test_hexagram_trail_pattern_marked(self, loom_models):
-        from kafed.loom.shuttle import Shuttle
+        from loom.loom.shuttle import Shuttle
         # 3+ ids with small diff → stable
         trail = Shuttle.hexagram_trail([10, 10, 11])
         assert "穩定" in trail or "穩定" in trail
 
     def test_session_tapestry(self, loom, loom_models):
-        from kafed.loom.shuttle import Shuttle
+        from loom.loom.shuttle import Shuttle
         loom.start_turn(query="分析", hexagram={"id": 47})
         loom.end_turn()
         loom.start_turn(query="修正", hexagram={"id": 10})
@@ -239,7 +239,7 @@ class TestShuttle:
         assert "修正" in tapestry
 
     def test_conversation_tapestry(self, loom):
-        from kafed.loom.shuttle import Shuttle
+        from loom.loom.shuttle import Shuttle
         loom.get_or_create_conversation()
         loom.start_turn(query="Q1", hexagram={"id": 10, "q_value": 0.8})
         loom.end_turn()
@@ -253,7 +253,7 @@ class TestShuttle:
         assert "1 sessions" in tapestry or "1 sessions" in tapestry
 
     def test_shuttle_empty_session(self, loom_models):
-        from kafed.loom.shuttle import Shuttle
+        from loom.loom.shuttle import Shuttle
         s = loom_models.SessionRecord()
         assert Shuttle.session_tapestry(s) == "(empty session)"
 
@@ -333,14 +333,14 @@ class TestModelProperties:
 class TestConversationBoundary:
     def test_forgetting_score_fresh(self, loom_models):
         """新 conversation 的 forgetting_score 應接近 1.0。"""
-        from kafed.loom.factory import ConversationFactory
+        from loom.loom.factory import ConversationFactory
         c = loom_models.ConversationRecord()
         score = ConversationFactory.forgetting_score(c)
         assert 0.9 <= score <= 1.0, f"expected fresh, got {score}"
 
     def test_forgetting_score_decays_with_time(self, loom_models):
         """模擬長時間空白 → score 應低於閾值。"""
-        from kafed.loom.factory import ConversationFactory
+        from loom.loom.factory import ConversationFactory
         import time
         # 模擬 130 小時前的 conversation（exp(-0.01*130) = 0.27 < 0.30）
         c = loom_models.ConversationRecord(
@@ -352,8 +352,8 @@ class TestConversationBoundary:
 
     def test_forgetting_score_decays_with_turns(self, loom_models):
         """多輪 + 短時間 → score 應低於閾值（turn + time 組合效應）。"""
-        from kafed.loom.factory import ConversationFactory
-        from kafed.loom.factory import TurnFactory
+        from loom.loom.factory import ConversationFactory
+        from loom.loom.factory import TurnFactory
         import time
         # 30 輪 + 48h：exp(-0.01*48 - 0.005*30) = exp(-0.63) = 0.53 → 不夠
         # 50 輪 + 72h：exp(-0.01*72 - 0.005*50) = exp(-0.97) = 0.38 → 還不夠
@@ -376,7 +376,7 @@ class TestConversationBoundary:
 
     def test_should_close_drift(self, loom_models):
         """話題漂移時 should_close 應返回 True。"""
-        from kafed.loom.factory import ConversationFactory
+        from loom.loom.factory import ConversationFactory
         c = loom_models.ConversationRecord(topic_centroid=[1.0, 0.0, 0.0])
         # 完全不同的向量
         assert ConversationFactory.should_close(
@@ -385,7 +385,7 @@ class TestConversationBoundary:
 
     def test_should_close_same_topic(self, loom_models):
         """同一話題時 should_close 應返回 False。"""
-        from kafed.loom.factory import ConversationFactory
+        from loom.loom.factory import ConversationFactory
         c = loom_models.ConversationRecord(topic_centroid=[0.5, 0.5, 0.5])
         assert ConversationFactory.should_close(
             c, new_query_embedding=[0.5, 0.5, 0.5],
@@ -393,7 +393,7 @@ class TestConversationBoundary:
 
     def test_should_close_no_embedding(self, loom_models):
         """無 embedding 時僅靠遺忘曲線判定。"""
-        from kafed.loom.factory import ConversationFactory
+        from loom.loom.factory import ConversationFactory
         c = loom_models.ConversationRecord()
         # 新鮮 → 不關
         assert ConversationFactory.should_close(c) is False
@@ -424,15 +424,15 @@ class TestConversationBoundary:
 
 class TestSolidifier:
     def test_solidify_knowledge_only(self):
-        """solidify() 應寫入 KAFED（跳過 Loom 如果無活躍 conversation）。"""
-        from kafed.analyzer.solidifier import solidify
+        """solidify() 應寫入 LOOM（跳過 Loom 如果無活躍 conversation）。"""
+        from loom.analyzer.solidifier import solidify
         result = solidify("測試洞察", domain="TEST", source="test")
         assert "status" in result
         # Loom 不活躍，不報錯即可
 
     def test_solidify_with_loom_active(self, loom):
         """活躍 Loom conversation 時 solidify 應自動記錄到 session。"""
-        from kafed.analyzer.solidifier import solidify
+        from loom.analyzer.solidifier import solidify
         loom.start_turn(query="測試")
         result = solidify("測試洞察 Loom 集成", domain="TEST", source="test")
         assert result is not None
