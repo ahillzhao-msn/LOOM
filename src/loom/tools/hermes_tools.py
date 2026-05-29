@@ -6,13 +6,29 @@
 注意：FlowVisualizer 不再是 Hermes 工具。
 流程可視化已整合進 LOOM 內部 logging（loom.flow），
 由 recommend() / solidify() 自動調用。
-Agent 透過 from loom.flow import flow_mark 記錄非 LOOM 步驟。
 """
 
 from __future__ import annotations
 
 import json
 from typing import Optional
+
+# ── Hermes Registry ───────────────────────────────────────────
+# 注意：此文件同時作為 LOOM 包模塊（pip install）和 Hermes 工具（symlink）部署。
+#
+# 當在 Hermes 上下文中：from tools.registry 可正常解析 → 真實註冊生效。
+# 當從 LOOM 包導入時：tools.registry 不可用 → _DummyRegistry 使所有
+# registry.register() 調用安全降級為 no-op，不中斷模塊導入。
+#
+# 所有函數（loom_recommend, loom_solidify 等）在兩種上下文中皆可直接導入使用。
+try:
+    from tools.registry import registry, tool_error
+except ModuleNotFoundError:
+    class _DummyRegistry:
+        """Hermes 不可用時的安全降級——registry.register() 為 no-op。"""
+        def register(self, **kw):
+            pass
+    registry = _DummyRegistry()
 
 
 def _safe_json(data, error_prefix="LOOM error") -> str:
@@ -234,3 +250,231 @@ def loom_classify(text: str) -> str:
         return _safe_json(result)
     except Exception as e:
         return _safe_json({"error": str(e)})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Hermes Registry Registration
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Schema 定義 ──
+
+LOOM_CLOSE_SCHEMA = {
+    "type": "object",
+    "properties": {},
+    "required": [],
+}
+
+LOOM_RECOMMEND_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "user_input": {
+            "type": "string",
+            "description": "使用者原始輸入，LOOM 將執行 5W1H 分解 → 卦象預判 → 知識召回 → EVAL 評分",
+        },
+    },
+    "required": ["user_input"],
+}
+
+LOOM_FIND_PARTNERS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "briefs": {
+            "type": "string",
+            "description": "JSON 字符串陣列，如 '[\"工單分析\", \"代碼審計\"]'。為每個子任務匹配最佳模型",
+        },
+    },
+    "required": ["briefs"],
+}
+
+LOOM_SOLIDIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "insight": {
+            "type": "string",
+            "description": "洞察內容（教訓、發現、模式）",
+        },
+        "domain": {
+            "type": "string",
+            "description": "域標籤（預設 GENERAL）",
+            "default": "GENERAL",
+        },
+        "source": {
+            "type": "string",
+            "description": "來源標識（預設 agent_turn）",
+            "default": "agent_turn",
+        },
+    },
+    "required": ["insight"],
+}
+
+LOOM_QUERY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": "查詢文本",
+        },
+        "domain": {
+            "type": "string",
+            "description": "可選域過濾（空字符串=不限制）",
+            "default": "",
+        },
+        "k": {
+            "type": "integer",
+            "description": "返回結果數量 (1-20)",
+            "default": 5,
+        },
+        "soft": {
+            "type": "boolean",
+            "description": "啟用軟分類（多域候選）",
+            "default": True,
+        },
+    },
+    "required": ["query"],
+}
+
+LOOM_INGEST_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "text": {
+            "type": "string",
+            "description": "文字內容",
+        },
+        "domain": {
+            "type": "string",
+            "description": "目標域標籤",
+            "default": "GENERAL",
+        },
+        "source": {
+            "type": "string",
+            "description": "來源標識",
+            "default": "hermes_tool",
+        },
+    },
+    "required": ["text"],
+}
+
+LOOM_STATUS_SCHEMA = {
+    "type": "object",
+    "properties": {},
+    "required": [],
+}
+
+LOOM_CLASSIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "text": {
+            "type": "string",
+            "description": "分類文本",
+        },
+    },
+    "required": ["text"],
+}
+
+
+def _check_loom_requirements() -> Optional[str]:
+    """檢查 LOOM 環境是否可用。"""
+    try:
+        import loom  # noqa: F401
+        return None  # 可用
+    except ImportError:
+        return "LOOM package not installed (pip install -e ~/LOOM)"
+
+
+# ── 註冊工具（Hermes AST auto-discovery 檢測目標） ────────────
+# 所有 registry.register() 調用位於模塊頂層，供 Hermes 工具發現機制
+# （_module_registers_tools()）透過 AST 掃描檢測。
+# 當 Hermes 不可用時，_DummyRegistry 使這些調用安全降級為 no-op。
+
+registry.register(
+    name="loom_recommend",
+    toolset="loom",
+    schema=LOOM_RECOMMEND_SCHEMA,
+    handler=lambda args, **kw: loom_recommend(args.get("user_input", "")),
+    check_fn=_check_loom_requirements,
+    emoji="🔮",
+    description="LOOM 決策素材生成：5W1H 分解 → YiCeNet 卦象預判 → 知識召回 → EVAL 評分",
+)
+
+registry.register(
+    name="loom_solidify",
+    toolset="loom",
+    schema=LOOM_SOLIDIFY_SCHEMA,
+    handler=lambda args, **kw: loom_solidify(
+        insight=args.get("insight", ""),
+        domain=args.get("domain", "GENERAL"),
+        source=args.get("source", "agent_turn"),
+    ),
+    check_fn=_check_loom_requirements,
+    emoji="💾",
+    description="將本輪洞察寫入 LOOM 知識庫（回應後調用）",
+)
+
+registry.register(
+    name="loom_find_partners",
+    toolset="loom",
+    schema=LOOM_FIND_PARTNERS_SCHEMA,
+    handler=lambda args, **kw: loom_find_partners(args.get("briefs", "[]")),
+    check_fn=_check_loom_requirements,
+    emoji="🤝",
+    description="為子任務列表匹配最佳模型（三向量聚合）",
+)
+
+registry.register(
+    name="loom_query",
+    toolset="loom",
+    schema=LOOM_QUERY_SCHEMA,
+    handler=lambda args, **kw: loom_query(
+        query=args.get("query", ""),
+        domain=args.get("domain", ""),
+        k=args.get("k", 5),
+        soft=args.get("soft", True),
+    ),
+    check_fn=_check_loom_requirements,
+    emoji="📖",
+    description="查詢 LOOM 知識庫（RAG 檢索）",
+)
+
+registry.register(
+    name="loom_ingest",
+    toolset="loom",
+    schema=LOOM_INGEST_SCHEMA,
+    handler=lambda args, **kw: loom_ingest(
+        text=args.get("text", ""),
+        domain=args.get("domain", "GENERAL"),
+        source=args.get("source", "hermes_tool"),
+    ),
+    check_fn=_check_loom_requirements,
+    emoji="📥",
+    description="寫入知識到 LOOM 知識庫",
+)
+
+registry.register(
+    name="loom_status",
+    toolset="loom",
+    schema=LOOM_STATUS_SCHEMA,
+    handler=lambda args, **kw: loom_status(),
+    check_fn=_check_loom_requirements,
+    emoji="📊",
+    description="LOOM 系統狀態：chunk 數、域分佈、引擎健康",
+)
+
+registry.register(
+    name="loom_classify",
+    toolset="loom",
+    schema=LOOM_CLASSIFY_SCHEMA,
+    handler=lambda args, **kw: loom_classify(args.get("text", "")),
+    check_fn=_check_loom_requirements,
+    emoji="🏷️",
+    description="分類文本到 LOOM 域（純嵌入分類）",
+)
+
+registry.register(
+    name="loom_loom_close",
+    toolset="loom",
+    schema=LOOM_CLOSE_SCHEMA,
+    handler=lambda args, **kw: loom_loom_close(),
+    check_fn=_check_loom_requirements,
+    emoji="🚪",
+    description="關閉當前 LOOM conversation（開新 conversation 前調用）",
+)

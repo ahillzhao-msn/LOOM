@@ -673,17 +673,18 @@ def install_into_hermes(hermes_info: dict, project_root: str) -> bool:
 def _install_loom_tool_symlink(hermes_available: bool):
     """創建 LOOM Hermes tool symlink（軟性——失敗不中斷）。
 
-    將 src/loom/client/loom_tool.py 鏈接到 Hermes tools/ 目錄，
-    使 loom_query / loom_ingest / loom_status / loom_classify 可用。
+    將 src/loom/tools/hermes_tools.py 鏈接到 Hermes tools/ 目錄，
+    使 loom_recommend / loom_solidify / loom_query / loom_status 等
+    工具在 Hermes 重啟後透過 AST auto-discovery 自動註冊。
     """
     if not hermes_available:
         print("  · LOOM tool: Hermes not available, skip")
         return
 
     project_root = Path(__file__).resolve().parent.parent.parent.parent  # src/ → project root
-    tool_src = project_root / "src" / "loom" / "client" / "loom_tool.py"
+    tool_src = project_root / "src" / "loom" / "tools" / "hermes_tools.py"
     if not tool_src.exists():
-        print("  · loom_tool.py not found, skip Hermes integration")
+        print("  · hermes_tools.py not found, skip Hermes integration")
         return
 
     hermes_home = os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))
@@ -695,6 +696,8 @@ def _install_loom_tool_symlink(hermes_available: bool):
             tool_dst.unlink()
         tool_dst.symlink_to(str(tool_src))
         print(f"  ✓ LOOM tool linked: {tool_dst}")
+        print(f"    → {tool_src}")
+        print(f"    Note: Hermes auto-registers tools on restart via AST discovery.")
     except Exception as e:
         print(f"  ⚠ LOOM tool link failed: {e}")
 
