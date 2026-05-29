@@ -294,7 +294,7 @@ class KafedConfig:
     # Chroma
     @property
     def chroma_collection(self) -> str:
-        return self._str("LOOM_CHROMA_COLLECTION", ("chroma", "collection"), "kafed_knowledge")
+        return self._str("LOOM_CHROMA_COLLECTION", ("chroma", "collection"), "loom_knowledge")
 
     # Chunker
     @property

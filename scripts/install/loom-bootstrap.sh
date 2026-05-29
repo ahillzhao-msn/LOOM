@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# KAFED Bootstrap — 一鍵安裝+初始化腳本
+# LOOM Bootstrap — 一鍵安裝+初始化腳本
 #
 # 用法：
 #   curl -fsSL https://raw.githubusercontent.com/... | bash
 #   bash <(curl -fsSL ...)
 #   # 或本地：
-#   cd KAFED && bash scripts/kafed-bootstrap.sh
+#   cd LOOM && bash scripts/install/loom-bootstrap.sh
 #
 # 功能：
 #   1. 檢測環境（Hermes/WSL/GPU/llama-server）
-#   2. 自動生成 kafed.yaml（自適應配置）
+#   2. 自動生成 loom.yaml（自適應配置）
 #   3. 創建數據目錄 + 初始化所有模塊
 #   4. 註冊 cron 任務
 #   5. 安裝到 Hermes venv（默認）或獨立 venv
@@ -35,7 +35,7 @@ info()  { echo -e "${BLUE}[·]${NC} $1"; }
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║  KAFED Bootstrap — 一鍵安裝初始化       ║"
+echo "║  LOOM Bootstrap — 一鍵安裝初始化       ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
@@ -85,7 +85,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════
-# Step 3: 安裝 KAFED
+# Step 3: 安裝 LOOM
 # ══════════════════════════════════════════════════
 
 INSTALL_TARGET="standalone"
@@ -105,9 +105,9 @@ else
     log "安裝目標: 獨立 venv ($PROJECT_ROOT/.venv)"
 fi
 
-info "安裝 KAFED 包 ($PROJECT_ROOT)..."
+info "安裝 LOOM 包 ($PROJECT_ROOT)..."
 $PIP_CMD install -e "$PROJECT_ROOT" 2>&1 | tail -1
-log "KAFED 安裝完成"
+log "LOOM 安裝完成"
 
 # ══════════════════════════════════════════════════
 # Step 4: 運行 Bootstrap
@@ -118,23 +118,23 @@ if echo "$PIP_CMD" | grep -q "python3"; then
     BOOTSTRAP_PY=$(echo "$PIP_CMD" | sed 's/ -m pip//')
 fi
 
-info "運行 KAFED Bootstrap 初始化..."
+info "運行 LOOM Bootstrap 初始化..."
 if [ -n "$HERMES_VENV" ]; then
-    $HERMES_VENV/bin/python3 -m kafed.install.bootstrap --auto --hermes
+    $HERMES_VENV/bin/python3 -m loom.install.bootstrap --auto --hermes
 else
-    $PROJECT_ROOT/.venv/bin/python3 -m kafed.install.bootstrap --auto --venv
+    $PROJECT_ROOT/.venv/bin/python3 -m loom.install.bootstrap --auto --venv
 fi
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║  KAFED 初始化完成！                       ║"
+echo "║  LOOM 初始化完成！                       ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 info "下一步："
-echo "  驗證安裝:  kafed-init"
-echo "  啟動心跳:  kafed-heartbeat"
-echo "  查看配置:  kafed config show  (或 ~/.kafed/kafed.yaml)"
+echo "  驗證安裝:  loom status"
+echo "  啟動心跳:  loom-heartbeat"
+echo "  查看配置:  loom config show  (或 ~/.loom/loom.yaml)"
 echo ""
 echo "  需要攝入知識文檔？"
-echo "    python3 -m kafed.ingest  <file-or-dir>"
+echo "    python3 -m loom.ingest  <file-or-dir>"
 echo ""

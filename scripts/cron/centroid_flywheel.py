@@ -10,7 +10,7 @@ Centroid Flywheel — 定期重聚類飛輪。
   5. 寫 flywheel 日誌
 
 用法:
-  cd ~/KAFED && source .venv/bin/activate
+  cd ~/LOOM && source .venv/bin/activate
   python3 scripts/centroid_flywheel.py [--force] [--threshold 0.05]
 """
 from __future__ import annotations

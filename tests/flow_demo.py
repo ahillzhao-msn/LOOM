@@ -51,7 +51,7 @@ def demo_case1():
 def demo_case2():
     """Case 2: 複雜任務 — 重構 LOOM embedding。"""
     divider("══════ Case 2: 重構 LOOM embedding ══════")
-    user_input = "重構KAFED的embedding模組：代碼審計 + 多後端Strategy + 補測試"
+    user_input = "重構LOOM的embedding模組：代碼審計 + 多後端Strategy + 補測試"
 
     # Case 2 compact — 含卦鏈
     chain_ids = [1, 44, 33, 12]  # 乾→姤→遯→否

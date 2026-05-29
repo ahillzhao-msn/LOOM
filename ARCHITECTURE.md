@@ -1,4 +1,4 @@
-# KAFED Architecture
+# LOOM Architecture
 
 > Version 4.0.0 · Decision-Support Engine · Loom · Director · Finder · Analyzer · Knowledge · Scheduler
 
@@ -21,17 +21,17 @@
 
 ## 1. Design Philosophy
 
-KAFED is built on a three-level framework:
+LOOM is built on a three-level framework:
 
 | Level | Principle | Engineering Manifestation |
 |-------|-----------|--------------------------|
-| **道** (Tao) | Follow nature, do not overreach | KAFED enriches context, Agent owns decisions |
+| **道** (Tao) | Follow nature, do not overreach | LOOM enriches context, Agent owns decisions |
 | **法** (Method) | Rules and systems | Four mandatory steps per turn: 5W1H → Hexagram → Recall → EVAL |
 | **兵** (Tactics) | Win first, then fight | All context gathered before Agent acts |
 
 ### Six Engineering Principles
 
-1. **Agent owns decisions, KAFED provides context** — KAFED never replaces the agent's judgment. It enriches the decision surface.
+1. **Agent owns decisions, LOOM provides context** — LOOM never replaces the agent's judgment. It enriches the decision surface.
 2. **Embedding space is the universal language** — classification, retrieval, and model matching all operate in the same vector space. No hardcoded keyword rules.
 3. **Vector store is primary storage** — ChromaDB is the physical kernel. All knowledge paths lead through it.
 4. **Event-driven, not threshold-driven** — the flywheel (E1–E5) responds to change events, not hardcoded timers.
@@ -44,7 +44,7 @@ KAFED is built on a three-level framework:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    KAFED v3.0                                │
+│                    LOOM v4.0                                │
 │                                                              │
 │  ┌─────── Frontend (per turn) ───────┐                       │
 │  │                                    │                      │
@@ -165,7 +165,7 @@ Tier 1–2 boundaries are technical (idle timeout, restart). Tier 3 is the only 
 `solidify()` automatically records to the active Loom conversation if one exists — zero additional Agent code:
 
 ```python
-from kafed.analyzer.solidifier import solidify
+from loom.analyzer.solidifier import solidify
 
 # If Loom has an active conversation, solidify auto-records
 solidify("Found: architecture coupling too tight", domain="ARCH")
@@ -176,7 +176,7 @@ solidify("Found: architecture coupling too tight", domain="ARCH")
 `close_conversation()` submits the aggregated reward signal to YiCeNet's flywheel:
 
 ```python
-from kafed.loom.manager import manager as loom
+from loom.loom.manager import manager as loom
 
 reward = loom.close_conversation()
 # reward = {n_turns, hexagram_evolution, correction_rate, token_efficiency, ...}
@@ -239,7 +239,7 @@ recommend(user_input) → Recommendation
 
 Heuristic extraction from user input — no LLM involved. Each dimension is filled only when keywords match:
 - **What**: action verbs (分析, 重構, audit, fix...)
-- **Where**: domain hints (SAP, KAFED, Python, WSL...)
+- **Where**: domain hints (SAP, LOOM, Python, WSL...)
 - **Why**: purpose patterns (為什麼, 為了, because...)
 - **When**: urgency signals (緊急, ASAP, 今天...)
 - **How**: method constraints (安全, 一步一驗, 最小改動...)
@@ -262,15 +262,15 @@ Hexagram Q-value modulates EVAL risk scoring: Q > 0.8 lowers risk, Q < 0.3 raise
 
 Multi-source recall using the same embedding model (bge-small 384d) across all sources:
 
-| Source | Match Method | Items | KAFED Role |
-|--------|-------------|-------|-----------|
+| Source | Match Method | Items | LOOM Role |
+|--------|-------------|-------|----------|
 | RAG (ChromaDB) | Cosine similarity | Top-8 | Primary channel |
 | Wiki | Cosine similarity (domain-filtered) | Top-4 | Same store |
 | Memory | Hermes CLI query + embedding | Top-3 | Read-only |
 | Sessions | Hermes CLI query + embedding | Top-3 | Read-only |
 | Skills | Hermes CLI query + embedding | Top-3 | Read-only |
 
-KAFED only manages RAG + Wiki. Memory, Sessions, and Skills are Agent-managed — KAFED queries them in read-only mode and includes the query embedding vector so the Agent can do its own matching.
+LOOM only manages RAG + Wiki. Memory, Sessions, and Skills are Agent-managed — LOOM queries them in read-only mode and includes the query embedding vector so the Agent can do its own matching.
 
 #### EVAL Scoring
 
@@ -343,7 +343,7 @@ scan_all()
 - `192.168.x.x` → cloud (remote server)
 - All others → cloud
 
-**Dynamic PricingTable**: `~/.kafed/pricing_cache.json` → code defaults → conservative estimate ($5/$15 per 1M tokens). Covers 24 models across 6 providers with official pricing sources.
+**Dynamic PricingTable**: `~/.loom/pricing_cache.json` → code defaults → conservative estimate ($5/$15 per 1M tokens). Covers 24 models across 6 providers with official pricing sources.
 
 ### 5.3 Heartbeat — Status Monitoring
 
@@ -375,7 +375,7 @@ Called after every Agent response:
 
 ```python
 solidify(insight, domain="GENERAL", source="agent_turn")
-  → ingest(text, target="kafed")
+  → ingest(text, target="loom")
     → chunk_document() → quality filter → embed → ChromaDB
     → EventChecker.after_ingest() → E1-E5 flywheel
 ```
@@ -469,7 +469,7 @@ Zip archives containing:
 - `centroid.npy` — domain centroid for structural alignment
 - `seed_rules.yaml` — optional bootstrap rules
 
-Export/import via CLI: `python -m kafed.kpak pack|unpack|list|info`
+Export/import via CLI: `python -m loom.kpak pack|unpack|list|info`
 
 ---
 
@@ -497,7 +497,7 @@ WSL cannot guarantee cron execution (Windows host may sleep). Compensation trigg
 1. **Bootstrap** — checks all overdue tasks, runs compensation
 2. **Session start** — lightweight overdue check
 3. **Hermes cron tick** — normal scheduled execution
-4. **Manual** — `kafed scheduler run --compensate`
+4. **Manual** — `loom scheduler run --compensate`
 
 Each task's `compensate()` method coalesces multiple missed cycles into a single run (e.g., weekly centroid rebuild that missed 2 weeks runs once).
 
@@ -518,7 +518,7 @@ Each task's `compensate()` method coalesces multiple missed cycles into a single
 ### Priority Chain
 
 ```
-Environment variables  >  kafed.yaml  >  Code defaults
+Environment variables  >  loom.yaml  >  Code defaults
 ```
 
 ### Key Properties
@@ -535,7 +535,7 @@ Environment variables  >  kafed.yaml  >  Code defaults
 
 ### Secrets
 
-API keys managed via `KafedSecrets`, loaded from `.env` or environment variables. Never appear in logs, `show()`, or config files.
+API keys managed via `LoomSecrets`, loaded from `.env` or environment variables. Never appear in logs, `show()`, or config files.
 
 ---
 
@@ -563,4 +563,4 @@ API keys managed via `KafedSecrets`, loaded from `.env` or environment variables
 
 ---
 
-*KAFED v3.0 · Knowledge Agent Framework · MIT License*
+*LOOM v4.0 · Knowledge Agent Framework · MIT License*

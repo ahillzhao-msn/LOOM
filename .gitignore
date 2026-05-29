@@ -19,9 +19,9 @@ venv/
 .env
 .env.*
 
-# KAFED runtime data (configurable via KAFED_DATA_DIR)
+# LOOM runtime data (configurable via LOOM_DATA_DIR)
 data/
-kafed.yaml
+loom.yaml
 
 # Finder context buffer
 finder_context/

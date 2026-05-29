@@ -1,37 +1,39 @@
-# KAFED v3.0 — Knowledge Agent Framework
+# LOOM v4.0 — Knowledge Agent Framework
 
 > **Decision support, not execution. Knowledge that learns.**
 
 <p align="center">
   <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10+-blue.svg">
-  <img alt="Chunks" src="https://img.shields.io/badge/Chunks-143K+-green.svg">
-  <img alt="Domains" src="https://img.shields.io/badge/Domains-47-purple.svg">
+  <img alt="Chunks" src="https://img.shields.io/badge/Chunks-93K+-green.svg">
+  <img alt="Domains" src="https://img.shields.io/badge/Domains-38-purple.svg">
   <img alt="Version" src="https://img.shields.io/badge/Version-4.0.0-red.svg">
   <img alt="Tests" src="https://img.shields.io/badge/Tests-PASS-brightgreen.svg">
 </p>
 
 ---
 
-## What Is KAFED
+## What Is LOOM
 
-KAFED is a **decision-support engine** for AI agents. It doesn't execute tasks — it enriches the agent's context so the agent makes better decisions, faster, with less token waste.
+LOOM is a **decision-support engine** for AI agents. It doesn't execute tasks — it enriches the agent's context so the agent makes better decisions, faster, with less token waste.
 
-Every turn, KAFED performs four mandatory steps and injects the result into the agent's context:
+Every turn, LOOM performs four mandatory steps and injects the result into the agent's context:
 
 ```
 User Input → [5W1H Decomposition → YiCeNet Hexagram → Knowledge Recall → EVAL Scoring]
                 → Agent acts freely (tools, model selection, task splitting)
-                    → KAFED solidifies insights back into the knowledge base
+                    → LOOM solidifies insights back into the knowledge base
 ```
 
 The knowledge base is a self-organizing RAG system: it classifies, quality-filters, detects drift, and shares knowledge across instances via `.kpak` packages.
+
+Loom (织机) also manages conversation-level session lifecycles — weaving scattered turns into coherent decision trajectories for the flywheel.
 
 ---
 
 ## Before / After
 
-| Metric | Without KAFED | With KAFED v3 |
+| Metric | Without LOOM | With LOOM v4 |
 |--------|--------------|---------------|
 | **Context quality** | Agent starts from scratch each turn | 5W1H + hexagram guidance + relevant knowledge recalled |
 | **Token waste** | ~40% spent re-discovering known facts | Knowledge injected upfront, no re-discovery |
@@ -39,6 +41,7 @@ The knowledge base is a self-organizing RAG system: it classifies, quality-filte
 | **Knowledge retention** | Lost between sessions | Auto-solidified into RAG, retrievable next session |
 | **Task complexity awareness** | None | EVAL 5-dimension scoring (Tier 1–3) |
 | **Knowledge decay** | Stale facts never cleaned | E1-E5 flywheel events: drift detection, dedup, staleness |
+| **Conversation continuity** | Lost on restart/idle | Loom preserves logical conversations across technical boundaries |
 
 ---
 
@@ -47,11 +50,11 @@ The knowledge base is a self-organizing RAG system: it classifies, quality-filte
 ### Install
 
 ```bash
-git clone https://github.com/ahillzhao-msn/KAFED.git
-cd KAFED
+git clone https://github.com/ahillzhao-msn/LOOM.git
+cd LOOM
 
 # One-command bootstrap
-bash scripts/install/kafed-bootstrap.sh
+bash scripts/install/loom-bootstrap.sh
 
 # Symlink Hermes tools
 bash scripts/install/symlink-tools.sh
@@ -62,12 +65,12 @@ The bootstrap auto-detects your environment (Hermes venv, WSL, GPU, llama-server
 ### Basic Usage
 
 ```python
-from kafed import recommend, solidify, find_partners
+from loom import recommend, solidify, find_partners
 
 # Every turn: get decision context
 rec = recommend("SAP PM工单IW32增强")
 print(rec.inject())
-# ══════ KAFED 决策素材 ══════
+# ══════ LOOM 决策素材 ══════
 # ▎5W1H: what=分析 where=SAP PM 工单
 # ▎卦: ䷄ 需 ⚊⚊⚊⚋⚊⚋ — 等待时机
 # ▎知识召回: 8 条 (含 IW32 exit, 增强模式)
@@ -88,48 +91,54 @@ solidify("IW32增强: 先读现有exit再扩展APPEND", domain="SAP_PM")
 
 ### Hermes Agent Integration
 
-Add to your SOUL.md:
+LOOM tools auto-register in Hermes via AST discovery. Add to your SOUL.md:
 
 ```
-每轮开始 → kafed_recommend(user_input) → 注入上下文
-  → Agent 自由行动（可调 kafed_find_partners 匹配模型）
-    → kafed_solidify(insight)
+每轮开始 → loom_recommend(user_input) → 注入上下文
+  → Agent 自由行动（可调 loom_find_partners 匹配模型）
+    → loom_solidify(insight)
 ```
 
-Or call directly as Hermes tools: `kafed_recommend`, `kafed_find_partners`, `kafed_solidify`, `kafed_query`, `kafed_ingest`.
+Hermes tools: `loom_recommend`, `loom_find_partners`, `loom_solidify`, `loom_query`, `loom_ingest`, `loom_status`, `loom_classify`, `loom_loom_close`.
 
 ### Knowledge Packages
 
 ```bash
-python -m kafed.kpak pack SAP_PM          # export domain
-python -m kafed.kpak unpack SAP_PM.kpak   # import to another instance
-python -m kafed.kpak info SAP_PM.kpak     # inspect contents
+python -m loom.kpak pack SAP_PM          # export domain
+python -m loom.kpak unpack SAP_PM.kpak   # import to another instance
+python -m loom.kpak info SAP_PM.kpak     # inspect contents
 ```
 
 ---
 
 ## Architecture
 
-KAFED has four layers — a **decision-support frontend** and a **learning backend**:
+LOOM has four layers — a **decision-support frontend** and a **learning backend**, wrapped by the **Loom conversation lifecycle**:
 
 ```
-┌── Frontend (every turn) ──┐          ┌── Backend (async) ──┐
-│                            │          │                      │
-│  Director                  │          │  Analyzer            │
-│    recommend()             │────────► │    solidify()        │
-│    5W1H → Hexagram →       │          │    session audit     │
-│    Recall → EVAL           │          │    knowledge audit   │
-│                            │          │                      │
-│  Finder (on-demand)        │          │  Scheduler           │
-│    find_partners()         │          │    task registry     │
-│    heartbeat probes        │          │    WSL compensation  │
-│    explorer scans          │          │                      │
-│                            │          │                      │
-│  Knowledge (passive)       │◄──────── │  Flywheel (E1-E5)    │
-│    RAG + classify          │          │    centroid rebuild  │
-│    ContextProvider         │          │    drift detection   │
-│    .kpak sharing           │          │    dedup + staleness │
-└────────────────────────────┘          └──────────────────────┘
+┌── Loom Conversation (logical) ──────────────────────────┐
+│                                                          │
+│  ┌── Frontend (every turn) ──┐   ┌── Backend (async) ──┐│
+│  │                           │   │                      ││
+│  │  Director                  │   │  Analyzer            ││
+│  │    recommend()             │──►│    solidify()        ││
+│  │    5W1H → Hexagram →       │   │    session audit     ││
+│  │    Recall → EVAL           │   │    knowledge audit   ││
+│  │                           │   │                      ││
+│  │  Finder (on-demand)       │   │  Scheduler           ││
+│  │    find_partners()        │   │    task registry     ││
+│  │    heartbeat probes       │   │    WSL compensation  ││
+│  │    explorer scans         │   │                      ││
+│  │                           │   │                      ││
+│  │  Knowledge (passive)      │◄──│  Flywheel (E1-E5)    ││
+│  │    RAG + classify         │   │    centroid rebuild  ││
+│  │    ContextProvider        │   │    drift detection   ││
+│  │    .kpak sharing          │   │    dedup + staleness ││
+│  └───────────────────────────┘   └──────────────────────┘│
+│                                                          │
+│  Conversation → Session → Turn (three-layer lifecycle)   │
+│  Auto-close: forgetting curve / embedding drift / idle   │
+└──────────────────────────────────────────────────────────┘
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical design.
@@ -138,7 +147,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical design.
 
 ## Core Principles
 
-1. **Agent owns decisions, KAFED provides context** — the engine never replaces the agent's judgment. It enriches the soil, doesn't plant the seeds.
+1. **Agent owns decisions, LOOM provides context** — the engine never replaces the agent's judgment. It enriches the soil, doesn't plant the seeds.
 
 2. **Embedding space is the universal language** — classification, retrieval, model matching all happen in vector space. No hardcoded keyword rules.
 
@@ -171,9 +180,9 @@ See [docs/loom-architecture.md](docs/loom-architecture.md) for the full design a
 
 ## Personal AI Manifesto
 
-> KAFED was born from a simple frustration: AI agents should remember, but they shouldn't need to be retrained. They should learn from every conversation, but they shouldn't drown in noise. They should make decisions with context, not guesswork.
+> LOOM was born from a simple frustration: AI agents should remember, but they shouldn't need to be retrained. They should learn from every conversation, but they shouldn't drown in noise. They should make decisions with context, not guesswork.
 >
-> The name comes from the Arabic root ق-ف-د (Q-F-D) — to bind, to knot, to tie knowledge together. KAFED doesn't just store facts. It weaves them into a structure that the agent can navigate.
+> The name comes from the Arabic root ق-ف-د (Q-F-D) — to bind, to knot, to tie knowledge together. LOOM doesn't just store facts. It weaves them into a structure that the agent can navigate.
 >
 > We believe that the best AI assistant is not the one with the most parameters — it's the one that wastes the fewest tokens re-learning what it already knows.
 >
