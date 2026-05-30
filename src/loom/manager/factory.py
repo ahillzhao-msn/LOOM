@@ -47,22 +47,30 @@ class TurnFactory:
         hexagram: dict,
         knowledge: dict,
         eval_score: dict,
-        flow_entries: list,       # Shuttle flow entries
+        flow_entries: list,       # Shuttle flow entries (list[str])
         token_usage: dict,
         response_time: float,
     ) -> TurnRecord:
-        """從 loom_recommend() 結果建立 Turn。"""
+        """从 loom_recommend() 结果建立 Turn。"""
         steps = []
         for e in flow_entries:
-            if isinstance(e, tuple):
+            if isinstance(e, str):
+                steps.append(e)
+            elif isinstance(e, tuple):
                 module_code, detail = e[0], e[1] if len(e) > 1 else ""
+                code = module_code
+                if detail:
+                    code += f"({detail})"
+                steps.append(code)
             else:
-                module_code = f"{e.module}{e.action}"
-                detail = e.detail or ""
-            code = module_code
-            if detail:
-                code += f"({detail})"
-            steps.append(code)
+                try:
+                    code = f"{e.module}{e.action}"
+                    detail = e.detail or ""
+                    if detail:
+                        code += f"({detail})"
+                    steps.append(code)
+                except AttributeError:
+                    steps.append(str(e))
 
         return TurnRecord(
             query=query,

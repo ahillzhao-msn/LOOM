@@ -163,61 +163,62 @@ def recommend(user_input: str) -> Recommendation:
     
 
     # ── Step 1: 問 (5W1H 分解) ──
-    with flow_step("D", "問", "5W1H") as ctx:
-        try:
-            w5 = _step_5w1h(user_input)
-            ctx.data = {"what": w5.what[:10], "where": w5.where[:10], "who": w5.who[:10]}
-            ctx.result = f"{sum(1 for v in [w5.what, w5.why, w5.who, w5.where, w5.when, w5.how] if v)} 維度"
-        except Exception:
-            ctx.data = {"what": "✗", "where": "✗", "who": "✗"}
-            ctx.result = "✗"
-            w5 = None
+    _steps: list[str] = []
+    try:
+        w5 = _step_5w1h(user_input)
+        _dim = sum(1 for v in [w5.what, w5.why, w5.who, w5.where, w5.when, w5.how] if v)
+        _det = w5.what[:10] if w5.what else f"{_dim}維度"
+        _steps.append(f"D問({_det})")
+    except Exception:
+        _steps.append("D問(✗)")
+        w5 = None
 
     # ── Step 2: 卦 ──
-    with flow_step("D", "卦", "YiCeNet") as ctx:
-        try:
-            hexagram = _step_hexagram(user_input)
-        except Exception:
-            hexagram = {"id": 0, "name": "✗", "q_value": 0.5, "chain": [],
-                        "display_compact": "✗"}
-        ctx.data = {"compact": hexagram.get("display_compact", "✗")}
-        ctx.result = hexagram.get("name", "✗")
+    try:
+        hexagram = _step_hexagram(user_input)
+        _det = hexagram.get("display_compact", hexagram.get("name", "?"))
+        _steps.append(f"D卦({_det})")
+    except Exception:
+        hexagram = {"id": 0, "name": "✗", "q_value": 0.5, "chain": [],
+                    "display_compact": "✗"}
+        _steps.append("D卦(✗)")
 
     # ── Step 3: 召 ──
-    with flow_step("D", "召", "LOOM") as ctx:
-        try:
-            knowledge = _step_recall(user_input, hexagram.get("id", 0))
-        except Exception:
-            knowledge = []
-        counts = _count_sources(knowledge)
-        ctx.data = counts
-        ctx.result = f"{len(knowledge)} 條" if knowledge else "✗"
+    try:
+        knowledge = _step_recall(user_input, hexagram.get("id", 0))
+    except Exception:
+        knowledge = []
+    counts = _count_sources(knowledge)
+    _src_parts = []
+    for key, label in [("memory", "M"), ("wiki", "W"),
+                       ("skills", "S"), ("recall", "R"), ("rag", "K")]:
+        cnt = counts.get(key, 0)
+        if cnt:
+            _src_parts.append(f"{label}[{cnt}]")
+    _det = " ".join(_src_parts) if _src_parts else f"{len(knowledge)}條"
+    _steps.append(f"D召({_det})")
 
     # ── Step 4: 評 ──
-    with flow_step("D", "評", "EVAL") as ctx:
-        try:
-            evaluation = _step_eval(user_input, knowledge, hexagram)
-            ctx.data = {"tier": evaluation.tier, "score": f"{evaluation.score:.2f}"}
-            ctx.result = f"T{evaluation.tier} S={evaluation.score:.2f}"
-        except Exception:
-            ctx.data = {"tier": "✗", "score": "✗"}
-            ctx.result = "✗"
-            evaluation = None
+    try:
+        evaluation = _step_eval(user_input, knowledge, hexagram)
+        _det = f"T{evaluation.tier} S{evaluation.score:.2f}"
+        _steps.append(f"D評({_det})")
+    except Exception:
+        evaluation = None
+        _steps.append("D評(✗)")
 
     # ── Step 5: Loom conversation 生命週期（透明）──
-    from loom.manager.shuttle import Shuttle as _Shuttle; _flow_entries = lambda: []
     _auto_loom_lifecycle(
         query=user_input,
         hexagram=hexagram,
         knowledge_items=knowledge,
         eval_score=evaluation,
-        flow_entries=_flow_entries(),
+        flow_entries=_steps,
         response_time=0.0,
     )
 
-    # ── Step 6: Shuttle 流程鏈輸出（受 LOOM_SHUTTLE 控制）──
+    # ── Step 6: Shuttle 流程鏈輸出 ──
     from loom.manager.shuttle import Shuttle
-    _steps = [e.compact() for e in _flow_entries()]
     Shuttle.emit_flow(_steps, title="LOOM", end="done")
 
     return Recommendation(
