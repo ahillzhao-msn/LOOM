@@ -47,7 +47,7 @@ class TurnFactory:
         hexagram: dict,
         knowledge: dict,
         eval_score: dict,
-        flow_entries: list,       # FlowEntry objects from loom.flow
+        flow_entries: list,       # Shuttle flow entries
         token_usage: dict,
         response_time: float,
     ) -> TurnRecord:
