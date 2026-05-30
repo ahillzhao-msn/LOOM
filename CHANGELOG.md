@@ -1,5 +1,32 @@
 # KAFED Changelog
 
+## v4.0.1 (2026-05-30) — Refactor: Clean Structure, Shuttle Takes Over
+
+### Breaking Changes
+
+- **`flow.py` deleted** — Fully replaced by Shuttle. `flow_enabled()` now respects the same `LOOM_SHUTTLE` default as `shuttle_enabled()` (default: ON). `[LOOM Pipeline]` no longer appears.
+- **`director/` flattened** — `recommend.py`, `eval.py`, `hexagram.py` promoted to `src/loom/`. All import paths updated.
+- **`loom/loom/` → `manager/`** — Nested directory flattened: `manager.py` → `client.py`, `shuttle.py`, `models.py`, `factory.py` moved to `manager/`.
+- **`finder/` output migrated** — `flow.chain/hop/stop` replaced with `Shuttle.display()`.
+
+### New Features
+
+- **Shuttle session_render() + conversation_render()** — Session and conversation level summaries output to stderr with `[ LOOM Session ]` and `[ LOOM Conversation ]` tags. Triggered by `_ensure_session()` (session close) and `close_conversation()` (conversation close).
+- **Solidify now emits via Shuttle** — `solidifier.py` removed `flow_step()` dependency; outputs `[ LOOM ]  D固(...)` instead of `[LOOM Pipeline]`.
+
+### Fixes
+
+- **ID collision fix** — `ingest.py: UUID suffix appended on MD5 collision. ChromaDB no longer rejects duplicate IDs.
+- **flow_enabled() default** — Changed from `""` (fallthrough to `isatty()`) to `"1"` (consistent with shuttle). Pipeline suppressed by default.
+- **Missing dependencies** — `PyMuPDF`, `python-docx`, `python-pptx` installed in hermes venv for the PDF ingestion pipeline.
+
+### Documentation
+
+- **SOUL-template.md** — Cleaned up, simplified Chinese, removed over-specific technical content.
+- **README.md** — Advanced Hermes Plugin Integration section for `loom-hooks` and `yicenet-hooks`.
+- **ARCHITECTURE.md** — Updated import path in code example.
+- **CHANGELOG.md** — This entry.
+
 ## v4.0.0 (2026-05-28) — Conversation Context (Loom)
 
 ### Architecture

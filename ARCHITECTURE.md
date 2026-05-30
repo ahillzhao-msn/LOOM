@@ -176,7 +176,7 @@ solidify("Found: architecture coupling too tight", domain="ARCH")
 `close_conversation()` submits the aggregated reward signal to YiCeNet's flywheel:
 
 ```python
-from loom.loom.manager import manager as loom
+from loom.manager.client import manager as loom
 
 reward = loom.close_conversation()
 # reward = {n_turns, hexagram_evolution, correction_rate, token_efficiency, ...}
