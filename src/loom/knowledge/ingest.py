@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -142,20 +143,23 @@ def _ingest_to_loom(text: str, domain: str = "GENERAL",
             else:
                 # 結構化塊：保留 chunker 的所有元數據
                 content = chunk.get("content", str(chunk))
+                # Chroma metadata rejects None — coerce all values
+                _h = chunk.get("heading", "")
                 meta = {
-                    "domain": domain,
-                    "source": source or chunk.get("source", "ingest"),
-                    "heading": chunk.get("heading", ""),
-                    "heading_chain": ",".join(chunk.get("heading_chain", [])),
-                    "quality_score": chunk.get("quality_score", 0.0),
-                    "chars": chunk.get("chars", len(content)),
-                    "chunk_index": chunk.get("chunk_index", j),
+                    "domain": str(domain),
+                    "source": str(source or chunk.get("source", "ingest")),
+                    "heading": str(_h) if _h is not None else "",
+                    "heading_chain": ",".join(str(x) for x in chunk.get("heading_chain", [])),
+                    "quality_score": float(chunk.get("quality_score", 0.0)),
+                    "chars": int(chunk.get("chars", len(content))),
+                    "chunk_index": int(chunk.get("chunk_index", j)),
                 }
 
             texts.append(content)
             metadatas.append(meta)
             _uid = hashlib.md5(content.encode()).hexdigest()[:12]
-            ids.append(f"{domain}_ingest_{_uid}")
+            _id = f"{domain}_{_uid}_{uuid.uuid4().hex[:8]}"
+            ids.append(_id)
 
         vs.add(texts, metadatas=metadatas, ids=ids)
 

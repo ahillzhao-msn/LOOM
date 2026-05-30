@@ -7,7 +7,7 @@
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10+-blue.svg">
   <img alt="Chunks" src="https://img.shields.io/badge/Chunks-93K+-green.svg">
   <img alt="Domains" src="https://img.shields.io/badge/Domains-38-purple.svg">
-  <img alt="Version" src="https://img.shields.io/badge/Version-4.0.0-red.svg">
+  <img alt="Version" src="https://img.shields.io/badge/Version-4.0.1-red.svg">
   <img alt="Tests" src="https://img.shields.io/badge/Tests-PASS-brightgreen.svg">
 </p>
 
@@ -100,6 +100,44 @@ LOOM tools auto-register in Hermes via AST discovery. Add to your SOUL.md:
 ```
 
 Hermes tools: `loom_recommend`, `loom_find_partners`, `loom_solidify`, `loom_query`, `loom_ingest`, `loom_status`, `loom_classify`, `loom_loom_close`.
+
+### Advanced: Hermes Plugin Integration (Lifecycle Hooks)
+
+For a zero-effort setup where LOOM runs on **every turn without explicit tool calls**, install the optional Hermes plugin. It wires `loom_recommend` and `loom_solidify` as native `pre_llm_call` / `post_llm_call` hooks — no SOUL.md edits required.
+
+```bash
+# From the LOOM repo
+bash scripts/install/install-loom-hooks.sh
+```
+
+What it does:
+
+| Hook | When | What | Effect |
+|------|------|------|--------|
+| `on_session_start` | Session begins | YiCeNet hexagram baseline | Establishes context fingerprint |
+| `pre_llm_call` | Before every response | `loom_recommend(user_msg)` | Injects relevant knowledge + hexagram into prompt |
+| `post_api_request` | After every API call | Accumulates token usage | Feeds accurate cost data to YiCeNet reward |
+| `post_llm_call` | After every response | `loom_solidify(insight)` + `yicenet_feedback(reward)` | Auto-saves learnings + closes RL flywheel |
+| `on_session_end` | Session ends | `loom_solidify("Session ended")` | Session-level wrap-up |
+
+**Lifecycle (invisible to the agent):**
+
+```
+User Input → [pre_llm_call] loom_recommend → inject context to user message
+  → Hermes processes normally (tools, code, research)
+    → [post_llm_call] loom_solidify(insight) → LOOM knowledge base updated
+```
+
+**Requirements:** Hermes Agent with plugin system (`hermes plugins enable`), LOOM pip-installed, YiCeNet (optional — hexagram prediction).
+
+**To remove:**
+
+```bash
+hermes plugins disable loom-hooks
+rm -rf ~/.hermes/plugins/loom-hooks
+```
+
+This pattern is recommended for production deployments where every turn should contribute to the knowledge flywheel without depending on the agent remembering to call LOOM tools.
 
 ### Knowledge Packages
 
