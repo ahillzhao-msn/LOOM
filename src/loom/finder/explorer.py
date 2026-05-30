@@ -674,7 +674,7 @@ def _find_unreferenced_roles(role_map: dict,
 
 def scan(update_roster: bool = False) -> list[WorkerCandidate]:
     """探索所有可用模型。"""
-    from loom.flow import chain
+    from loom.manager.shuttle import Shuttle as _Shuttle
     workers = Explorer.scan_all()
     chain("find/scan", [
         ("src", "hermes_config", ""),

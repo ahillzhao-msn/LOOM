@@ -9,7 +9,7 @@
 
 from .models import TurnRecord, SessionRecord, ConversationRecord
 from .factory import TurnFactory, SessionFactory, ConversationFactory
-from .manager import manager, get_manager
+from .client import manager, get_manager
 from .shuttle import Shuttle
 
 __all__ = [

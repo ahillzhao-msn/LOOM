@@ -1,19 +1,14 @@
-"""LOOM — Knowledge Agent Framework for Embedded Data.  v3.0
+"""LOOM — Knowledge Agent Framework for Embedded Data.  v4.0.1
 
-五層智能飛輪：Director → Finder → Knowledge → Analyzer → Scheduler
+核心入口：recommend() → solidify() 知識飛輪
+三層會話管理：Turn → Session → Conversation（manager/）
+展示層：Shuttle（manager/shuttle.py）"""
 
-前段（決策支援）：director.recommend() — 卦→召→評 三步注入 Agent 上下文
-後段（學習閉環）：analyzer.solidifier + knowledge 飛輪
 
-Executors 已移除——委託給 Hermes delegate_task。
-Backlog 已移除——使用 Hermes 原生 backlog。
-ActionRegistry 已移除——過度設計，未被實際驅動。
-"""
-
-__version__ = "4.0.0"
+__version__ = "4.0.1"
 
 # ── 公開 API ──
-from loom.director.recommend import recommend, Recommendation
+from loom.recommend import recommend, Recommendation
 from loom.analyzer.solidifier import solidify, session_end_audit
 from loom.finder.router import Router as _Router
 

@@ -97,7 +97,7 @@ class ContextSpace:
         self._buffer.append(entry)
         self._save()
 
-        from loom.flow import hop, stop
+        from loom.manager.shuttle import Shuttle as _Shuttle
         hop("ctx", f"{model_name} {'+' if success else '-'}",
             detail=f"buf={len(self._buffer)}")
 

@@ -52,7 +52,7 @@ def loom_loom_close() -> str:
     recommend() 下一次被調用時自動創建新 conversation。
     """
     try:
-        from loom.loom.manager import manager as loom
+        from loom.manager.client import manager as loom
         reward = loom.close_conversation(reason="user_explicit")
         return _safe_json({
             "status": "closed" if reward else "no_conversation",
@@ -72,7 +72,7 @@ def loom_recommend(user_input: str) -> str:
         user_input: 使用者原始輸入
     """
     try:
-        from loom.director.recommend import recommend
+        from loom.recommend import recommend
 
         rec = recommend(user_input=user_input)
         eval_dict = {}

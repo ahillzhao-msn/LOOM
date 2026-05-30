@@ -12,12 +12,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from loom.director.eval import EvalScorer, EvalScore
-from loom.director.hexagram import (
+from loom.eval import EvalScorer, EvalScore
+from loom.hexagram import (
     hexagram_display, hexagram_chain, hexagram_chain_compact,
     hexagram_symbol, hexagram_six_lines,
 )
-from loom.flow import flow_step, flow_reset
+
 
 
 # ── 全域輔助 ────────────────────────────────────
@@ -160,7 +160,7 @@ def recommend(user_input: str) -> Recommendation:
     Returns:
         Recommendation: 5W1H + 卦象 + 知識片段 + EVAL 評分
     """
-    flow_reset("LOOM Pipeline")
+    
 
     # ── Step 1: 問 (5W1H 分解) ──
     with flow_step("D", "問", "5W1H") as ctx:
@@ -205,7 +205,7 @@ def recommend(user_input: str) -> Recommendation:
             evaluation = None
 
     # ── Step 5: Loom conversation 生命週期（透明）──
-    from loom.flow import flow_entries as _flow_entries
+    from loom.manager.shuttle import Shuttle as _Shuttle; _flow_entries = lambda: []
     _auto_loom_lifecycle(
         query=user_input,
         hexagram=hexagram,
@@ -216,7 +216,7 @@ def recommend(user_input: str) -> Recommendation:
     )
 
     # ── Step 6: Shuttle 流程鏈輸出（受 LOOM_SHUTTLE 控制）──
-    from loom.loom.shuttle import Shuttle
+    from loom.manager.shuttle import Shuttle
     _steps = [e.compact() for e in _flow_entries()]
     Shuttle.emit_flow(_steps, title="LOOM", end="done")
 
@@ -262,8 +262,8 @@ def _auto_loom_lifecycle(
 
     無活躍 conversation 時自動創建。
     """
-    from loom.loom.manager import manager as loom
-    from loom.loom.factory import ConversationFactory
+    from loom.manager.client import manager as loom
+    from loom.manager.factory import ConversationFactory
 
     embedding = _compute_embedding(query)
 

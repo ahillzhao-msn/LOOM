@@ -5,7 +5,7 @@ LOOM 與 Loom 的唯一交互入口。
 管理 conversation/session 生命週期，軌跡累積與獎勵聚合。
 
 使用方式（在 recommend() 開頭）：
-    from loom.loom import manager as loom
+    from loom.manager.client import manager as loom
     loom.start_turn(query, hexagram, knowledge, eval, tokens, flow_entries)
     ...
     loom.end_turn(user_feedback=None)
@@ -43,11 +43,16 @@ class _ConversationManager:
         return self._conversation
 
     def close_conversation(self, reason: str = "natural"):
-        """關閉當前 conversation → 寫入 SESSION_TRACE → 通知 YiCeNet 飛輪。"""
+        """关闭当前 conversation → 写入 SESSION_TRACE → 通知 YiCeNet 飞轮 + Shuttle 展示。"""
         if self._conversation is None:
             return
         if self._current_turn:
             self._current_turn = None
+
+        # conversation 级别 shuttle 输出（关闭前捕获摘要）
+        from loom.manager.shuttle import Shuttle
+        Shuttle.conversation_render(self._conversation, event="close")
+
         self._conversation.close()
         reward = self._conversation.reward_for_flywheel()
 
@@ -78,14 +83,16 @@ class _ConversationManager:
         return None
 
     def _ensure_session(self) -> SessionRecord:
-        """確保有活躍 session。過期則自動閉開。"""
+        """确保有活跃 session。过期则自动闭开。"""
         conv = self.get_or_create_conversation()
         session = self.active_session
         if session is None or SessionFactory.is_expired(session):
-            # 關閉舊 session
+            # 关闭旧 session — 触发 Session 级别 shuttle 输出
             if session:
+                from loom.manager.shuttle import Shuttle
+                Shuttle.session_render(session, event="close")
                 session.close("idle")
-            # 創建新 session
+            # 创建新 session
             session = SessionFactory.create(conversation_id=conv.conversation_id)
             conv.add_session(session)
         return session

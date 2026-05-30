@@ -164,7 +164,71 @@ class Shuttle:
 
     @staticmethod
     def display(text: str):
-        """輸出到 stderr（不干擾 Agent 回應）。"""
+        """输出到 stderr（不干扰 Agent 回应）。"""
         if shuttle_enabled():
             sys.stderr.write(text + "\n")
             sys.stderr.flush()
+
+    # ── 织法 5：Session 级别渲染（边界触发）──
+
+    @staticmethod
+    def session_render(session: SessionRecord, event: str = "start") -> None:
+        """Session 边界时输出全景摘要。
+
+        由 _ensure_session() 在关闭旧 session 时触发。
+        event: "start" | "close"
+        """
+        if not shuttle_enabled() or not session:
+            return
+        if event == "close":
+            ss = session.summarize()
+            trail = Shuttle.hexagram_trail(ss['hexagram_evolution'])
+            lines = [
+                f"[ LOOM Session ]  {ss['session_id'][:8]} 关闭",
+                f"  {ss['turns']} 轮 · {ss['total_tokens']} tokens · {ss['solidifies']} 次固化",
+            ]
+            if trail:
+                lines.append(f"  卦: {trail}")
+            # 关键转折点
+            keys = session.key_turns(2)
+            if keys:
+                for k in keys:
+                    markers = []
+                    if k.had_correction:
+                        markers.append("修正")
+                    if k.had_affirmation:
+                        markers.append("肯定")
+                    if markers:
+                        lines.append(f"  ⚡ {k.query[:20]:20s} {' '.join(markers)}")
+            Shuttle.display("\n".join(lines))
+
+    # ── 织法 6：Conversation 级别渲染（边界触发）──
+
+    @staticmethod
+    def conversation_render(conv, event: str = "close") -> None:
+        """Conversation 边界时输出跨 session 摘要。
+
+        由 close_conversation() 在关闭时触发。
+        event: "start" | "close"
+        """
+        if not shuttle_enabled() or not conv:
+            return
+        if event == "close":
+            reward = conv.reward_for_flywheel()
+            trail = Shuttle.hexagram_trail(reward['hexagram_evolution'])
+            lines = [
+                f"[ LOOM Conversation ]  {conv.conversation_id[:8]} 关闭",
+                f"  {reward['n_sessions']} sessions · {reward['n_turns']} 轮",
+            ]
+            if trail:
+                lines.append(f"  卦: {trail}")
+            lines.append(f"  效率: {reward['token_efficiency']:.4f} token/轮")
+            lines.append(f"  修正率: {reward['correction_rate']:.0%}")
+            lines.append(f"  固化: {reward['total_solidifies']} 次")
+            patterns = reward.get('session_patterns', [])
+            if patterns:
+                pattern_str = " | ".join(
+                    f"S{i+1}={p}" for i, p in enumerate(patterns)
+                )
+                lines.append(f"  session 模式: {pattern_str}")
+            Shuttle.display("\n".join(lines))
