@@ -216,14 +216,14 @@ _JUDGMENTS: dict[int, str] = {
 
 
 def hexagram_symbol(hid: int) -> str:
-    """返回卦符 Unicode 字符。"""
-    entry = _HEXAGRAMS.get(hid)
+    """返回卦符 Unicode 字符。hid 为 0-indexed (0-63)。"""
+    entry = _HEXAGRAMS.get(hid + 1)
     return entry[0] if entry else "?"
 
 
 def hexagram_display(hid: int) -> str:
-    """返回卦名（中文）。"""
-    entry = _HEXAGRAMS.get(hid)
+    """返回卦名（中文）。hid 为 0-indexed (0-63)，内部转换为 1-indexed。"""
+    entry = _HEXAGRAMS.get(hid + 1)
     return entry[1] if entry else "?"
 
 
@@ -240,15 +240,15 @@ def hexagram_six_lines(hid: int) -> str:
 
 
 def hexagram_judgment(hid: int) -> str:
-    """返回卦辞（周易原文）。"""
-    return _JUDGMENTS.get(hid, "")
+    """返回卦辞（周易原文）。hid 为 0-indexed (0-63)。"""
+    return _JUDGMENTS.get(hid + 1, "")
 
 
 def hexagram_chain(ids: list[int]) -> str:
     """完整卦链：䷀乾→䷁坤→䷂屯（符号+名称）。"""
     parts = []
     for hid in ids:
-        entry = _HEXAGRAMS.get(hid)
+        entry = _HEXAGRAMS.get(hid + 1)
         if entry:
             parts.append(f"{entry[0]}{entry[1]}")
         else:
@@ -260,4 +260,4 @@ def hexagram_chain_compact(ids: list[int]) -> str:
     """卦链精简显示：䷄→䷊→䷎→䷭（仅符号，无名称）。"""
     if not ids:
         return ""
-    return "→".join(hexagram_symbol(hid) for hid in ids if _HEXAGRAMS.get(hid))
+    return "→".join(hexagram_symbol(hid) for hid in ids if _HEXAGRAMS.get(hid + 1))
