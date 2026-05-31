@@ -261,7 +261,50 @@ class Shuttle:
         if event == "close":
             Shuttle.display(Shuttle.session_tapestry(session))
 
-    # ── 织法 6：Conversation 级别渲染（边界触发）──
+    # ── 织法 7：卦链脉冲（每轮固态后自适应展示）──
+
+    @staticmethod
+    def hexagram_pulse() -> None:
+        """自适应卦链脉冲。由 solidify() 每轮末尾触发。
+
+        展现策略：
+        - 0-1 个卦 → 不展示（已在流程链中）
+        - 2-3 个卦 → 完整展示
+        - 4+ 个卦 → 仅末 3 个 + "(共N)"
+        - 模式跳跃 → 完整展示并标模式变化
+        """
+        if not shuttle_enabled():
+            return
+        try:
+            from loom.manager.client import manager as _m
+            session = _m.active_session
+            if not session or not session.turns:
+                return
+            ids = session.summarize().get("hexagram_evolution", [])
+            ids = [h for h in ids if h > 0]
+            if len(ids) <= 1:
+                return  # 已在 emit_flow 中
+
+            full_trail = Shuttle.hexagram_trail(ids)
+            # 解析模式
+            pattern = ""
+            if len(ids) >= 3:
+                diffs = [abs(ids[i] - ids[i-1]) for i in range(1, len(ids))]
+                avg_s = sum(diffs) / len(diffs)
+                if avg_s <= 1:
+                    pattern = "稳定"
+                elif avg_s <= 5:
+                    pattern = "漂移"
+                else:
+                    pattern = "跳跃"
+
+            if len(ids) <= 3:
+                Shuttle.display(f"[ LOOM Pulse ]  卦链: {full_trail}")
+            else:
+                tail = Shuttle.hexagram_trail(ids[-3:])
+                Shuttle.display(f"[ LOOM Pulse ]  卦链: {tail} · (共{len(ids)}卦)")
+        except Exception:
+            pass  # 优雅降级
 
     @staticmethod
     def conversation_render(conv, event: str = "close") -> None:
