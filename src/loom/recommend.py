@@ -140,7 +140,7 @@ class Recommendation:
                         for _hid in _ids:
                             _symb = _sym(_hid + 1)
                             _n = hexagram_display(_hid) or ""
-                            _named.append(f"{_symb}{_n}" if _n else _symb)
+                            _named.append(f"{_symb} {_n}" if _n else _symb)
                         _chain = " → ".join(_named)
                         _tag = f" · {_st.get('pattern', '')}" if _st.get('pattern') else ""
                         _judge = f"\n  判: {_st.get('reason', '')}" if _st.get('reason') else ""
