@@ -41,7 +41,9 @@ def solidify(insight: str, domain: str = "GENERAL",
         from loom.manager.shuttle import Shuttle
         chunks = result.get('entries', 0)
         detail = f"domain={domain} chunks={chunks}"
-        Shuttle.emit_flow([f"D固({detail})"], title="LOOM", end="")
+        # 注册固化步骤 + 卦链展示
+        Shuttle.register_step(module="D", action="固", detail=detail)
+        Shuttle.emit_flow(title="LOOM")
     except Exception:
         pass
     logger.info("solidify: domain=%s status=%s chunks=%s",
