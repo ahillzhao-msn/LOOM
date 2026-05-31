@@ -55,57 +55,36 @@ class Step:
 _step_counter: int = 0
 
 
-def _gen_step_id(manager_holder=None) -> str:
-    """生成 CxSyTz-N 格式步骤 ID。"""
-    global _step_counter
-    _step_counter += 1
-    try:
-        if manager_holder is None:
-            from loom.manager.client import manager as _m
-        else:
-            _m = manager_holder
-        s = _m.status()
-        c = s.get("conv_seq", 0)
-        ses = s.get("session_count", 0)
-        t_n = s.get("active_session_turns", 0)
-    except Exception:
-        c, ses, t_n = 0, 0, 0
-    return f"C{c}S{ses}T{t_n}-{_step_counter}"
-
-
 def step(module: str, action: str) -> Callable:
     """装饰器：包裹步骤函数，自动执行：
 
-    1. 生成 CxSyTz-N ID
+    1. 注册到 Shuttle._steps（ID 自动生成）
     2. 计时（duration）
-    3. 注册到 Shuttle._steps
-    4. try/except — 异常时 status="error" 仍生成 Step（不静默崩溃）
+    3. try/except — 异常时 status="error" 仍生成 Step
 
-    被装饰函数应返回 (result, detail_str) 二元组，
-    其中 detail_str 是步骤摘要（如 "5W1H", "䷏豫", "K[5]W[2]"）。
+    被装饰函数应返回 (result, detail_str) 二元组。
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            from loom.manager.client import manager as _mgr
-            step_id = _gen_step_id(_mgr)
             start = time.time()
             try:
                 result = func(*args, **kwargs)
                 duration = time.time() - start
-                # 函数返回 (value, detail) 二元组
                 if isinstance(result, tuple) and len(result) == 2:
                     detail = str(result[1])
                     result = result[0]
                 else:
                     detail = action
-                Shuttle.register_step(step_id, module, action,
-                                      detail, "ok", duration)
+                Shuttle.register_step(module=module, action=action,
+                                      detail=detail, status="ok",
+                                      duration=duration)
                 return result
             except Exception as e:
                 duration = time.time() - start
-                Shuttle.register_step(step_id, module, action,
-                                      f"✗ {e}", "error", duration)
+                Shuttle.register_step(module=module, action=action,
+                                      detail=f"✗ {e}", status="error",
+                                      duration=duration)
                 raise
         return wrapper
     return decorator
@@ -122,19 +101,31 @@ class Shuttle:
 
     @classmethod
     def reset_steps(cls) -> None:
-        """每轮开始时调用。清空步骤列表 + 重置计数器。"""
-        global _step_counter
+        """每轮开始时调用。清空步骤列表。"""
         cls._steps = []
-        _step_counter = 0
 
     @classmethod
-    def register_step(cls, step_id: str, module: str, action: str,
-                       detail: str, status: str, duration: float) -> Step:
-        """注册一个步骤到内部列表。"""
-        s = Step(id=step_id, module=module, action=action,
-                 detail=detail, status=status, duration=duration)
-        cls._steps.append(s)
-        return s
+    def register_step(cls, step_id: str = "", module: str = "", action: str = "",
+                       detail: str = "", status: str = "ok",
+                       duration: float = 0.0) -> Step:
+        """注册一个步骤到内部列表。
+
+        当 step_id 为空时自动从 manager.status 生成 CxSyTz-N 格式 ID。
+        当 step_id 已提供 CxSyTz-open/close 等格式时直接使用。
+        """
+        if not step_id:
+            from loom.manager.client import manager as _m
+            s = _m.status()
+            c = s.get("conv_seq", 0)
+            ses = s.get("session_count", 0)
+            t_n = s.get("active_session_turns", 0)
+            global _step_counter
+            _step_counter += 1
+            step_id = f"C{c}S{ses}T{t_n}-{_step_counter}"
+        step = Step(id=step_id, module=module, action=action,
+                    detail=detail, status=status, duration=duration)
+        cls._steps.append(step)
+        return step
 
     @classmethod
     def steps_snapshot(cls) -> list[Step]:

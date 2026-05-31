@@ -39,9 +39,22 @@ class _ConversationManager:
         if self._conversation is None:
             _ConversationManager._conv_seq += 1
             self._conversation = ConversationFactory.create()
+            from loom.manager.shuttle import Shuttle
+            Shuttle.register_step(
+                step_id=f"C{_ConversationManager._conv_seq}-open",
+                module="C", action="conversation_open",
+                detail=self._conversation.conversation_id[:12],
+            )
         elif ConversationFactory.should_close(self._conversation):
             self.close_conversation()
+            _ConversationManager._conv_seq += 1
             self._conversation = ConversationFactory.create()
+            from loom.manager.shuttle import Shuttle
+            Shuttle.register_step(
+                step_id=f"C{_ConversationManager._conv_seq}-open",
+                module="C", action="conversation_open",
+                detail=self._conversation.conversation_id[:12],
+            )
         return self._conversation
 
     def close_conversation(self, reason: str = "natural"):
@@ -51,8 +64,15 @@ class _ConversationManager:
         if self._current_turn:
             self._current_turn = None
 
-        # conversation 级别 shuttle 输出（关闭前捕获摘要）
+        # conversation 级别 shuttle 步骤（关闭前）
         from loom.manager.shuttle import Shuttle
+        c_seq = _ConversationManager._conv_seq
+        Shuttle.register_step(
+            step_id=f"C{c_seq}-close",
+            module="C", action="conversation_close",
+            detail=reason,
+        )
+        # conversation 摘要渲染
         Shuttle.conversation_render(self._conversation, event="close")
 
         self._conversation.close()
@@ -89,14 +109,27 @@ class _ConversationManager:
         conv = self.get_or_create_conversation()
         session = self.active_session
         if session is None or SessionFactory.is_expired(session):
-            # 关闭旧 session — 触发 Session 级别 shuttle 输出
+            from loom.manager.shuttle import Shuttle
+            c_seq = _ConversationManager._conv_seq
+            # 关闭旧 session
             if session:
-                from loom.manager.shuttle import Shuttle
+                ses_n = conv.sessions.index(session) + 1
+                Shuttle.register_step(
+                    step_id=f"C{c_seq}S{ses_n}-close",
+                    module="S", action="session_close",
+                    detail=f"{session.turn_count}轮",
+                )
                 Shuttle.session_render(session, event="close")
                 session.close("idle")
             # 创建新 session
             session = SessionFactory.create(conversation_id=conv.conversation_id)
             conv.add_session(session)
+            ses_n = conv.sessions.index(session) + 1
+            Shuttle.register_step(
+                step_id=f"C{c_seq}S{ses_n}-open",
+                module="S", action="session_open",
+                detail="",
+            )
         return session
 
     # ── Turn ──
