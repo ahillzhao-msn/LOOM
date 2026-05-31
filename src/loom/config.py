@@ -2,7 +2,7 @@
 
 設計原則：
   1. 所有路徑、文件名、閾值、權重集中於此——子模塊不自行定義
-  2. 敏感信息（API Key、Token）由 KafedSecrets 管理，不出現在 show() 中
+  2. 敏感信息（API Key、Token）由 LoomSecrets 管理，不出現在 show() 中
   3. 優先級：環境變量 > YAML 配置文件 > 代碼默認值
   4. 搜索路徑：$LOOM_CONFIG_FILE → ./loom.yaml → ~/.loom/loom.yaml → /etc/loom/loom.yaml
   5. 零硬編碼——所有默認路徑以 ~/.loom/ 為基線
@@ -66,10 +66,10 @@ def _yaml_val(data: dict, *keys: str, default: Any = None) -> Any:
 
 
 # ══════════════════════════════════════════════════
-# KafedSecrets — 敏感信息（密鑰/Token），不出現在 show() 中
+# LoomSecrets — 敏感信息（密鑰/Token），不出現在 show() 中
 # ══════════════════════════════════════════════════
 
-class KafedSecrets:
+class LoomSecrets:
     """LOOM 敏感信息訪問層。
 
     從 .env 或環境變量讀取 API Key、Token 等。
@@ -137,16 +137,15 @@ class KafedSecrets:
 
 
 # ══════════════════════════════════════════════════
-# KafedConfig — 非敏感配置
+# LoomConfig — 非敏感配置
 # ══════════════════════════════════════════════════
 
 
 @dataclass
-class KafedConfig:
-    """LOOM 全局配置單例。
+class LoomConfig:
+    """LOOM 非敏感應用配置。
 
-    所有值可被 YAML 文件或環境變量覆蓋。
-    敏感信息請用 KafedSecrets。
+    敏感信息請用 LoomSecrets。
     """
 
     _yaml_data: dict[str, Any] = field(default_factory=lambda: _load_yaml(_find_config_file()))
@@ -519,14 +518,14 @@ class KafedConfig:
 # 全局單例
 # ══════════════════════════════════════════════════
 
-_config: KafedConfig | None = None
-_secrets: KafedSecrets | None = None
+_config: LoomConfig | None = None
+_secrets: LoomSecrets | None = None
 
 
-def get_config() -> KafedConfig:
+def get_config() -> LoomConfig:
     global _config
     if _config is None:
-        _config = KafedConfig()
+        _config = LoomConfig()
         cfg = _config
         for d in [cfg.chroma_path, cfg.feedback_dir, cfg.kpak_dir,
                   cfg.context_dir]:
@@ -534,8 +533,8 @@ def get_config() -> KafedConfig:
     return _config
 
 
-def get_secrets() -> KafedSecrets:
+def get_secrets() -> LoomSecrets:
     global _secrets
     if _secrets is None:
-        _secrets = KafedSecrets()
+        _secrets = LoomSecrets()
     return _secrets
