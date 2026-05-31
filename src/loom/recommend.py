@@ -148,6 +148,17 @@ class Recommendation:
                          f"風險={self.eval_score.f4_risk.name}")
             parts.append("")
 
+        # ── 策略脉冲（基于卦链模式自适应）──
+        try:
+            from loom.manager.shuttle import Shuttle
+            st = Shuttle.hexagram_strategy()
+            if st.get("mode"):
+                emoji = {"concise": "⚡", "thorough": "🔍", "reset": "🔄"}.get(st["mode"], "▸")
+                parts.append(f"▎策略: {emoji} {st['mode']}  — {st.get('reason', '')}")
+                parts.append("")
+        except Exception:
+            pass
+
         parts.append("══════════════════════════════")
         return "\n".join(parts)
 

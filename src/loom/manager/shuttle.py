@@ -306,6 +306,46 @@ class Shuttle:
         except Exception:
             pass  # 优雅降级
 
+    # ── 织法 8：策略调整（基于卦链模式）──
+
+    @staticmethod
+    def hexagram_strategy() -> dict:
+        """返回基于卦链模式的自适应策略建议。
+
+        Returns:
+            {"mode": "concise" | "thorough" | "reset",
+             "pattern": "稳定" | "漂移" | "跳跃" | "",
+             "reason": str}
+        """
+        try:
+            from loom.manager.client import manager as _m
+            session = _m.active_session
+            if not session or not session.turns:
+                return {"mode": "", "pattern": "", "reason": ""}
+            ids = session.summarize().get("hexagram_evolution", [])
+            ids = [h for h in ids if h > 0]
+            if len(ids) < 2:
+                return {"mode": "concise", "pattern": "", "reason": "开局阶段"}
+
+            diffs = [abs(ids[i] - ids[i-1]) for i in range(1, len(ids))]
+            avg_s = sum(diffs) / len(diffs)
+            last_diff = diffs[-1] if diffs else 0
+
+            if avg_s <= 1 and last_diff <= 1:
+                return {"mode": "concise", "pattern": "稳定",
+                        "reason": f"连续{len(ids)}卦稳定，可加速"}
+            if avg_s <= 5:
+                return {"mode": "thorough", "pattern": "漂移",
+                        "reason": f"主题持续演化中({len(ids)}卦)，保持上下文深度"}
+            # 跳跃
+            if len(ids) <= 3:
+                return {"mode": "thorough", "pattern": "跳跃",
+                        "reason": f"新方向({len(ids)}卦)，需深挖理解"}
+            return {"mode": "reset", "pattern": "跳跃",
+                    "reason": f"大幅跳跃({len(ids)}卦)，考虑重置上下文焦点"}
+        except Exception:
+            return {"mode": "", "pattern": "", "reason": ""}
+
     @staticmethod
     def conversation_render(conv, event: str = "close") -> None:
         """Conversation 边界时输出跨 session 摘要。"""
