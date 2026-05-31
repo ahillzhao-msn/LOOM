@@ -69,7 +69,7 @@ class _ConversationManager:
         c_seq = _ConversationManager._conv_seq
         Shuttle.register_step(
             step_id=f"C{c_seq}-close",
-            module="C", action="和",
+            module="C", action="合",
             detail=reason,
         )
         # conversation 摘要渲染
@@ -116,7 +116,7 @@ class _ConversationManager:
                 ses_n = conv.sessions.index(session) + 1
                 Shuttle.register_step(
                     step_id=f"C{c_seq}S{ses_n}-close",
-                    module="S", action="和",
+                    module="S", action="合",
                     detail=f"{session.turn_count}轮",
                 )
                 Shuttle.session_render(session, event="close")

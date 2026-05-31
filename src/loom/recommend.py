@@ -185,7 +185,7 @@ def recommend(user_input: str) -> Recommendation:
     )
 
     # Step 6: Shuttle 流程链输出
-    Shuttle.emit_flow(title="LOOM", end="done")
+    Shuttle.emit_flow(title="LOOM", end="|")
 
     return Recommendation(
         user_input=user_input,
