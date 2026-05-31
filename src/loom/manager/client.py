@@ -42,7 +42,7 @@ class _ConversationManager:
             from loom.manager.shuttle import Shuttle
             Shuttle.register_step(
                 step_id=f"C{_ConversationManager._conv_seq}-open",
-                module="C", action="conversation_open",
+                module="C", action="启",
                 detail=self._conversation.conversation_id[:12],
             )
         elif ConversationFactory.should_close(self._conversation):
@@ -52,7 +52,7 @@ class _ConversationManager:
             from loom.manager.shuttle import Shuttle
             Shuttle.register_step(
                 step_id=f"C{_ConversationManager._conv_seq}-open",
-                module="C", action="conversation_open",
+                module="C", action="启",
                 detail=self._conversation.conversation_id[:12],
             )
         return self._conversation
@@ -69,7 +69,7 @@ class _ConversationManager:
         c_seq = _ConversationManager._conv_seq
         Shuttle.register_step(
             step_id=f"C{c_seq}-close",
-            module="C", action="conversation_close",
+            module="C", action="和",
             detail=reason,
         )
         # conversation 摘要渲染
@@ -116,7 +116,7 @@ class _ConversationManager:
                 ses_n = conv.sessions.index(session) + 1
                 Shuttle.register_step(
                     step_id=f"C{c_seq}S{ses_n}-close",
-                    module="S", action="session_close",
+                    module="S", action="和",
                     detail=f"{session.turn_count}轮",
                 )
                 Shuttle.session_render(session, event="close")
@@ -127,7 +127,7 @@ class _ConversationManager:
             ses_n = conv.sessions.index(session) + 1
             Shuttle.register_step(
                 step_id=f"C{c_seq}S{ses_n}-open",
-                module="S", action="session_open",
+                module="S", action="启",
                 detail="",
             )
         return session
