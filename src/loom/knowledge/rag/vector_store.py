@@ -16,14 +16,19 @@ from loom.knowledge.rag.embedding import embed_texts
 
 
 class VectorStore:
-    """Chroma 持久化向量存储封装。"""
+    """Chroma 持久化向量存储封装。多实例安全（共享单个 Chroma 客户端）。"""
+
+    _shared_clients: dict[str, chromadb.PersistentClient] = {}
 
     def __init__(self) -> None:
         cfg = get_config()
-        self._client = chromadb.PersistentClient(
-            path=str(cfg.chroma_path),
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
+        chroma_path = str(cfg.chroma_path)
+        if chroma_path not in self._shared_clients:
+            self._shared_clients[chroma_path] = chromadb.PersistentClient(
+                path=chroma_path,
+                settings=ChromaSettings(anonymized_telemetry=False),
+            )
+        self._client = self._shared_clients[chroma_path]
         self._collection = self._client.get_or_create_collection(
             name=cfg.chroma_collection
         )

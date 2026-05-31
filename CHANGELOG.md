@@ -1,5 +1,15 @@
 # KAFED Changelog
 
+## v4.0.3 (2026-05-30) — Fix: ChromaDB Singleton Conflict
+
+### Fixes
+
+- **VectorStore ChromaDB singleton** — Added `_shared_clients` class-level cache to prevent `ValueError: An instance of Chroma already exists` when multiple `VectorStore`/`ContextProvider` instances are created in the same process. ChromaDB's internal singleton rejects a second `PersistentClient` if settings differ even slightly. Fix: first init creates the client; reuses cached client on subsequent inits.
+
+### Tests
+
+- 43/43 passed
+
 ## v4.0.2 (2026-05-30) — Fix: Hexagram Off-by-One & Output Formatting
 
 ### Fixes
