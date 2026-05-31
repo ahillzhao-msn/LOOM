@@ -285,24 +285,34 @@ class Shuttle:
             if len(ids) <= 1:
                 return  # 已在 emit_flow 中
 
-            full_trail = Shuttle.hexagram_trail(ids)
-            # 解析模式
+            from loom.hexagram import hexagram_display
+
+            # 符号+名的卦链
+            try:
+                from yicenet.display import hexagram_symbol as _sym
+                def _hx_sym(hid): return _sym(hid + 1)
+            except (ImportError, ModuleNotFoundError):
+                _hx_sym = lambda hid: f"#{hid}"
+
             pattern = ""
+            judgement = ""
             if len(ids) >= 3:
                 diffs = [abs(ids[i] - ids[i-1]) for i in range(1, len(ids))]
                 avg_s = sum(diffs) / len(diffs)
                 if avg_s <= 1:
-                    pattern = "稳定"
+                    pattern = "稳定"; judgement = "节奏平稳"
                 elif avg_s <= 5:
-                    pattern = "漂移"
+                    pattern = "漂移"; judgement = "主题流变"
                 else:
-                    pattern = "跳跃"
+                    pattern = "跳跃"; judgement = "方向转换"
 
+            named_parts = [_hx_sym(h) + (hexagram_display(h) or "") for h in ids]
+            named_chain = " → ".join(named_parts)
             if len(ids) <= 3:
-                Shuttle.display(f"[ LOOM Pulse ]  卦链: {full_trail}")
+                Shuttle.display(f"[ 易策 ]  {named_chain} · {pattern} {judgement}")
             else:
-                tail = Shuttle.hexagram_trail(ids[-3:])
-                Shuttle.display(f"[ LOOM Pulse ]  卦链: {tail} · (共{len(ids)}卦)")
+                tail_named = " → ".join(named_parts[-3:])
+                Shuttle.display(f"[ 易策 ]  {tail_named} · (共{len(ids)}卦) · {pattern} {judgement}")
         except Exception:
             pass  # 优雅降级
 
