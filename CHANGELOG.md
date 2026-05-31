@@ -1,5 +1,17 @@
 # KAFED Changelog
 
+## v4.0.2 (2026-05-30) — Fix: Hexagram Off-by-One & Output Formatting
+
+### Fixes
+
+- **Off-by-one in hexagram lookup** — `hexagram_display()`, `hexagram_symbol()`, `hexagram_judgment()`, `hexagram_chain()`, `hexagram_chain_compact()` all now use `hid+1` to correctly index into the 64-hexagram list. Previously, hexagram ID `1` would look up index `1` (the second hexagram) instead of index `0` (the first, ䷀ 乾). Hydrological hexagrams (水, 坎, etc.) were unaffected because their `hid` happened to match; the bug caused wrong symbols/names for all others.
+- **Missing space in `inject()`** — Line 143 now adds a space between hexagram symbol and name (e.g. `䷀ 乾` instead of `䷀乾`).
+- **Missing space in `hexagram_pulse()`** — Same fix: space between hexagram symbol and Chinese name in pulse output.
+
+### Tests
+
+- **43/43 passed** — All existing tests continue to pass with no regressions.
+
 ## v4.0.1 (2026-05-30) — Refactor: Clean Structure, Step Abstraction, Shuttle Takes Over
 
 ### Breaking Changes
