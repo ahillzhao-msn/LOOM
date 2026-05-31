@@ -6,22 +6,9 @@
 
 - **VectorStore ChromaDB singleton** — Added `_shared_clients` class-level cache to prevent `ValueError: An instance of Chroma already exists` when multiple `VectorStore`/`ContextProvider` instances are created in the same process. ChromaDB's internal singleton rejects a second `PersistentClient` if settings differ even slightly. Fix: first init creates the client; reuses cached client on subsequent inits.
 
-### Tools
+### Tests
 
-- **`~/.hermes/scripts/loom-ingest.py`** — Hybrid three-tier PDF ingestion tool (markitdown → docling → pymupdf). Supports single file and batch directory mode. Installed as part of the SOC ingestion campaign.
-
-### SOC Ingestion Campaign
-
-| Course | Textbooks | PPTs | Quizzes | Total Chunks |
-|--------|-----------|------|---------|-------------|
-| SOC101 Intro to Sociology | 21 chapters (markitdown) | 9 lecture sets | 16 chapters (247 qs) | ~4,500 |
-| SOC102 Social Problems | 15 chapters + textbook | 5 lecture sets | — | ~2,000 |
-| SOC206 Social Psychology | — | 15 chapter slides | 15 chapters (220 qs) | ~1,600 |
-| SOC110 Marriage & Family | — | 3 lecture sets | — | ~600 |
-| Other courses | Partial | Partial | — | ~1,700 |
-| **Total** | | | | **10,626 chunks** (10,407 sociology) |
-
-### Notes
+- 43/43 passed
 
 ## v4.0.2 (2026-05-30) — Fix: Hexagram Off-by-One & Output Formatting
 
