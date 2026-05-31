@@ -147,9 +147,14 @@ class Recommendation:
                         parts.append(f"  卦链: {_chain}{_tag}{_judge}")
             except Exception:
                 pass
-            # 釋義
-            if h.get("interpretation"):
-                parts.append(f"  啟示: {h['interpretation']}")
+            # 卦辞（周易原文判语）
+            try:
+                from loom.hexagram import hexagram_judgment
+                _j = hexagram_judgment(hid)
+                if _j:
+                    parts.append(f"  判: {_j}")
+            except Exception:
+                pass
             parts.append("")
 
         # ── 知識 ──
