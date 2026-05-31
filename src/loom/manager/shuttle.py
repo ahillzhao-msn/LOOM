@@ -285,7 +285,7 @@ class Shuttle:
             if len(ids) <= 1:
                 return  # 已在 emit_flow 中
 
-            from loom.hexagram import hexagram_display
+            from loom.hexagram import hexagram_display, hexagram_judgment
 
             # 符号+名的卦链
             try:
@@ -308,11 +308,28 @@ class Shuttle:
 
             named_parts = [_hx_sym(h) + (hexagram_display(h) or "") for h in ids]
             named_chain = " → ".join(named_parts)
+            # 综合判辞：从序列卦辞中提取关键字信号
+            _sig = {"亨": 0, "吉": 0, "利": 0, "凶": 0, "厉": 0, "咎": 0, "悔": 0, "吝": 0}
+            for _hid in ids:
+                _j = hexagram_judgment(_hid)
+                for _kw in _sig:
+                    if _kw in _j:
+                        _sig[_kw] += 1
+            _pos = _sig["亨"] + _sig["吉"] + _sig["利"]
+            _neg = _sig["凶"] + _sig["厉"] + _sig["咎"] + _sig["悔"] + _sig["吝"]
+            if _pos > _neg:
+                _combined = "亨通"
+            elif _neg > _pos:
+                _combined = "警慎"
+            else:
+                _combined = "中平"
+            if pattern:
+                _combined += f"·{pattern}"
             if len(ids) <= 3:
-                Shuttle.display(f"[ 易策 ]  {named_chain} · {pattern} {judgement}")
+                Shuttle.display(f"[ 易策 ]  {named_chain} · {_combined}")
             else:
                 tail_named = " → ".join(named_parts[-3:])
-                Shuttle.display(f"[ 易策 ]  {tail_named} · (共{len(ids)}卦) · {pattern} {judgement}")
+                Shuttle.display(f"[ 易策 ]  {tail_named} · (共{len(ids)}卦) · {_combined}")
         except Exception:
             pass  # 优雅降级
 
