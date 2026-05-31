@@ -306,7 +306,7 @@ class Shuttle:
                 else:
                     pattern = "跳跃"; judgement = "方向转换"
 
-            named_parts = [_hx_sym(h) + (hexagram_display(h) or "") for h in ids]
+            named_parts = [_hx_sym(h) + " " + (hexagram_display(h) or "") for h in ids]
             named_chain = " → ".join(named_parts)
             # 综合判辞：从序列卦辞中提取关键字信号
             _sig = {"亨": 0, "吉": 0, "利": 0, "凶": 0, "厉": 0, "咎": 0, "悔": 0, "吝": 0}
