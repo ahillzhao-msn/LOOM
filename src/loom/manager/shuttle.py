@@ -1,66 +1,177 @@
 """
-梭子 (Shuttle) — Loom 的資訊探針。
+梭子 (Shuttle) — Loom 的信息探针。
 
-在 Conversation → Session → Turn 的經緯之間穿梭，
-收集關鍵資訊並提供多種優雅展示模式。
+在 Conversation → Session → Turn 的经纬之间穿梭，
+收集关键信息并提供多种优雅展示模式。
 
-取代 LOOM flow.py 的 FlowVisualizer——不再局限於每輪流程鏈，
-而是跨層級、跨輪次的一體化可視化。
+核心抽象：
+  Step — 原子步骤（CxSyTz-N 全局唯一 ID）
+  @step() 装饰器 — 包裹函数，自动计时/注册/异常处理
 """
 
 from __future__ import annotations
 
+import functools
 import os
 import sys
-from typing import Optional
+import time
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
 
 from .models import TurnRecord, SessionRecord, ConversationRecord
 
 
-# ── 全局開關 ──
+# ── 全局开关 ──
 
 def shuttle_enabled() -> bool:
     env = os.getenv("LOOM_SHUTTLE", "1")
     return env.lower() in ("1", "true", "yes", "on")
 
 
-# ── 核心展示函數 ──
+# ── 数据模型 ──
+
+@dataclass
+class Step:
+    """原子步骤。CxSyTz-N 格式保证整个 LOOM 生命周期内唯一。
+
+    id:       "C2S1T4-0" — Conversation 2, Session 1, Turn 4, Step 0
+    module:   "D" (Director), "K" (Knowledge), "A" (Analyzer)
+    action:   "问", "卦", "召", "评", "固"
+    detail:   "5W1H", "䷏豫", "K[5]W[2]", "T1 S1.00"
+    status:   "ok" | "error"
+    duration: 秒
+    """
+    id: str
+    module: str
+    action: str
+    detail: str
+    status: str
+    duration: float
+    timestamp: float = field(default_factory=time.time)
+
+
+# ── 装饰器 ──
+
+_step_counter: int = 0
+
+
+def _gen_step_id(manager_holder=None) -> str:
+    """生成 CxSyTz-N 格式步骤 ID。"""
+    global _step_counter
+    _step_counter += 1
+    try:
+        if manager_holder is None:
+            from loom.manager.client import manager as _m
+        else:
+            _m = manager_holder
+        s = _m.status()
+        c = s.get("conv_seq", 0)
+        ses = s.get("session_count", 0)
+        t_n = s.get("active_session_turns", 0)
+    except Exception:
+        c, ses, t_n = 0, 0, 0
+    return f"C{c}S{ses}T{t_n}-{_step_counter}"
+
+
+def step(module: str, action: str) -> Callable:
+    """装饰器：包裹步骤函数，自动执行：
+
+    1. 生成 CxSyTz-N ID
+    2. 计时（duration）
+    3. 注册到 Shuttle._steps
+    4. try/except — 异常时 status="error" 仍生成 Step（不静默崩溃）
+
+    被装饰函数应返回 (result, detail_str) 二元组，
+    其中 detail_str 是步骤摘要（如 "5W1H", "䷏豫", "K[5]W[2]"）。
+    """
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            from loom.manager.client import manager as _mgr
+            step_id = _gen_step_id(_mgr)
+            start = time.time()
+            try:
+                result = func(*args, **kwargs)
+                duration = time.time() - start
+                # 函数返回 (value, detail) 二元组
+                if isinstance(result, tuple) and len(result) == 2:
+                    detail = str(result[1])
+                    result = result[0]
+                else:
+                    detail = action
+                Shuttle.register_step(step_id, module, action,
+                                      detail, "ok", duration)
+                return result
+            except Exception as e:
+                duration = time.time() - start
+                Shuttle.register_step(step_id, module, action,
+                                      f"✗ {e}", "error", duration)
+                raise
+        return wrapper
+    return decorator
+
+
+# ── Shuttle 核心类 ──
 
 class Shuttle:
-    """梭子 — 多種織法（展示模式）。所有方法都是 @staticmethod。"""
+    """梭子 — 多种织法（展示模式）。所有方法都是 @staticmethod。"""
 
-    # ── 織法 1：流程鏈（每輪即時）──
+    _steps: list[Step] = []
+
+    # ── 步骤注册 ──
+
+    @classmethod
+    def reset_steps(cls) -> None:
+        """每轮开始时调用。清空步骤列表 + 重置计数器。"""
+        global _step_counter
+        cls._steps = []
+        _step_counter = 0
+
+    @classmethod
+    def register_step(cls, step_id: str, module: str, action: str,
+                       detail: str, status: str, duration: float) -> Step:
+        """注册一个步骤到内部列表。"""
+        s = Step(id=step_id, module=module, action=action,
+                 detail=detail, status=status, duration=duration)
+        cls._steps.append(s)
+        return s
+
+    @classmethod
+    def steps_snapshot(cls) -> list[Step]:
+        """返回步骤列表的浅拷贝（供外部只读访问）。"""
+        return list(cls._steps)
+
+    # ── 织法 1：流程链（每轮即时）──
 
     @staticmethod
-    def flow_chain(steps: list[str], end: str = "") -> str:
-        """當輪流程節點鏈。取代舊 compact 模式。
+    def flow_chain(steps: list[Step], end: str = "") -> str:
+        """从 Step 对象列表生成流程链文字。
 
-        輸入: ["D問", "D卦(YiCeNet)", "D召(LOOM)", "D評(EVAL)"]
-        輸出: D問 -> D卦(YiCeNet) -> D召(LOOM) -> D評(EVAL)
+        输出: D问(5W1H) -> D卦(䷏) -> D召(K[5]W[2]) -> D评(T1 S1.00)
         """
-        line = " -> ".join(steps)
+        parts = []
+        for s in steps:
+            label = f"{s.module}{s.action}({s.detail})" if s.detail else f"{s.module}{s.action}"
+            parts.append(label)
+        line = " -> ".join(parts)
         if end:
             line += f" -> {end}"
         return line
 
     @staticmethod
-    def emit_flow(steps: list[str], title: str = "Flow", end: str = ""):
-        """輸出流程鏈到 stderr。"""
+    def emit_flow(title: str = "LOOM", end: str = "") -> None:
+        """输出当前所有步骤的流程链到 stderr。"""
         if not shuttle_enabled():
             return
-        line = Shuttle.flow_chain(steps, end)
+        line = Shuttle.flow_chain(Shuttle._steps, end)
         sys.stderr.write(f"[ {title} ]  {line}\n")
         sys.stderr.flush()
 
-    # ── 織法 2：卦鏈足跡（跨輪次）──
+    # ── 织法 2：卦链足迹（跨轮次）──
 
     @staticmethod
     def hexagram_trail(hexagram_ids: list[int]) -> str:
-        """卦象演化足跡。
-
-        輸入: [47, 10, 10, 54]
-        輸出: ䷮ → ䷉ · ䷉ → ䷲  (附模式標記)
-        """
+        """卦象演化足迹。"""
         if not hexagram_ids:
             return ""
         try:
@@ -68,51 +179,44 @@ class Shuttle:
             _has_yicenet = True
         except (ImportError, ModuleNotFoundError):
             _has_yicenet = False
-        # 過濾 0（無卦）
         ids = [h for h in hexagram_ids if h > 0]
         if not ids:
             return "—"
 
         parts = []
-        for i, hid in enumerate(ids):
+        for hid in ids:
             if _has_yicenet:
                 symbol = sym(hid + 1)
                 parts.append(symbol or f"#{hid}")
             else:
                 parts.append(f"#{hid}")
 
-        # 標記模式
         if len(ids) >= 3:
             diffs = [abs(ids[i] - ids[i-1]) for i in range(1, len(ids))]
-            avg = sum(diffs) / len(diffs)
-            if avg <= 1:
-                return " → ".join(parts) + " · 穩定"
-            if avg <= 5:
+            avg_sum = sum(diffs) / len(diffs)
+            if avg_sum <= 1:
+                return " → ".join(parts) + " · 稳定"
+            if avg_sum <= 5:
                 return " → ".join(parts) + " · 漂移"
-            return " → ".join(parts) + " · 跳躍"
+            return " → ".join(parts) + " · 跳跃"
 
         return " → ".join(parts)
 
-    # ── 織法 3：Session 錦緞 ──
+    # ── 织法 3：Session 锦缎 ──
 
     @staticmethod
     def session_tapestry(session: SessionRecord) -> str:
-        """單一 session 的完整面貌。"""
+        """单一 session 的完整面貌。"""
         if not session or not session.turns:
             return "(empty session)"
-
         ss = session.summarize()
         lines = [
             f"Session {ss['session_id'][:8]}",
-            f"  {ss['turns']} 輪 · {ss['total_tokens']} tokens · {ss['solidifies']} 次固化",
+            f"  {ss['turns']} 轮 · {ss['total_tokens']} tokens · {ss['solidifies']} 次固化",
         ]
-
-        # 卦鏈
         trail = Shuttle.hexagram_trail(ss['hexagram_evolution'])
         if trail:
             lines.append(f"  卦: {trail}")
-
-        # 關鍵輪次
         keys = session.key_turns(2)
         if keys:
             for k in keys:
@@ -123,112 +227,59 @@ class Shuttle:
                     markers.append("肯定")
                 if markers:
                     lines.append(f"  ⚡ {k.query[:20]:20s} {' '.join(markers)}")
-
         return "\n".join(lines)
 
-    # ── 織法 4：Conversation 全貌 ──
+    # ── 织法 4：Conversation 全貌 ──
 
     @staticmethod
     def conversation_tapestry(conv: ConversationRecord) -> str:
-        """整場對話的織錦。"""
+        """整场对话的织锦。"""
         if not conv:
             return "(no conversation)"
-
         reward = conv.reward_for_flywheel()
         lines = [
-            f"📜 Conversation {conv.conversation_id[:8]}",
-            f"  {reward['n_sessions']} sessions · {reward['n_turns']} 輪",
+            f"Conversation {conv.conversation_id[:8]}",
+            f"  {reward['n_sessions']} sessions · {reward['n_turns']} 轮",
         ]
-
-        # 跨 session 卦演化
         trail = Shuttle.hexagram_trail(reward['hexagram_evolution'])
         if trail:
             lines.append(f"  卦: {trail}")
-
-        # 效率
-        lines.append(f"  效率: {reward['token_efficiency']:.4f} token/輪")
+        lines.append(f"  效率: {reward['token_efficiency']:.4f} token/轮")
         lines.append(f"  修正率: {reward['correction_rate']:.0%}")
         lines.append(f"  固化: {reward['total_solidifies']} 次")
-
-        # 各 session 模式
         patterns = reward.get('session_patterns', [])
         if patterns:
             pattern_str = " | ".join(
                 f"S{i+1}={p}" for i, p in enumerate(patterns)
             )
-            lines.append(f"  session: {pattern_str}")
-
+            lines.append(f"  session 模式: {pattern_str}")
         return "\n".join(lines)
-
-    # ── 通用輸出 ──
-
-    @staticmethod
-    def display(text: str):
-        """输出到 stderr（不干扰 Agent 回应）。"""
-        if shuttle_enabled():
-            sys.stderr.write(text + "\n")
-            sys.stderr.flush()
 
     # ── 织法 5：Session 级别渲染（边界触发）──
 
     @staticmethod
     def session_render(session: SessionRecord, event: str = "start") -> None:
-        """Session 边界时输出全景摘要。
-
-        由 _ensure_session() 在关闭旧 session 时触发。
-        event: "start" | "close"
-        """
+        """Session 边界时输出全景摘要。"""
         if not shuttle_enabled() or not session:
             return
         if event == "close":
-            ss = session.summarize()
-            trail = Shuttle.hexagram_trail(ss['hexagram_evolution'])
-            lines = [
-                f"[ LOOM Session ]  {ss['session_id'][:8]} 关闭",
-                f"  {ss['turns']} 轮 · {ss['total_tokens']} tokens · {ss['solidifies']} 次固化",
-            ]
-            if trail:
-                lines.append(f"  卦: {trail}")
-            # 关键转折点
-            keys = session.key_turns(2)
-            if keys:
-                for k in keys:
-                    markers = []
-                    if k.had_correction:
-                        markers.append("修正")
-                    if k.had_affirmation:
-                        markers.append("肯定")
-                    if markers:
-                        lines.append(f"  ⚡ {k.query[:20]:20s} {' '.join(markers)}")
-            Shuttle.display("\n".join(lines))
+            Shuttle.display(Shuttle.session_tapestry(session))
 
     # ── 织法 6：Conversation 级别渲染（边界触发）──
 
     @staticmethod
     def conversation_render(conv, event: str = "close") -> None:
-        """Conversation 边界时输出跨 session 摘要。
-
-        由 close_conversation() 在关闭时触发。
-        event: "start" | "close"
-        """
+        """Conversation 边界时输出跨 session 摘要。"""
         if not shuttle_enabled() or not conv:
             return
         if event == "close":
-            reward = conv.reward_for_flywheel()
-            trail = Shuttle.hexagram_trail(reward['hexagram_evolution'])
-            lines = [
-                f"[ LOOM Conversation ]  {conv.conversation_id[:8]} 关闭",
-                f"  {reward['n_sessions']} sessions · {reward['n_turns']} 轮",
-            ]
-            if trail:
-                lines.append(f"  卦: {trail}")
-            lines.append(f"  效率: {reward['token_efficiency']:.4f} token/轮")
-            lines.append(f"  修正率: {reward['correction_rate']:.0%}")
-            lines.append(f"  固化: {reward['total_solidifies']} 次")
-            patterns = reward.get('session_patterns', [])
-            if patterns:
-                pattern_str = " | ".join(
-                    f"S{i+1}={p}" for i, p in enumerate(patterns)
-                )
-                lines.append(f"  session 模式: {pattern_str}")
-            Shuttle.display("\n".join(lines))
+            Shuttle.display(Shuttle.conversation_tapestry(conv))
+
+    # ── 通用输出 ──
+
+    @staticmethod
+    def display(text: str) -> None:
+        """输出到 stderr（不干扰 Agent 回应）。"""
+        if shuttle_enabled():
+            sys.stderr.write(text + "\n")
+            sys.stderr.flush()

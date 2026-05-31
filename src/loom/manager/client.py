@@ -21,7 +21,8 @@ from .factory import TurnFactory, SessionFactory, ConversationFactory
 
 
 class _ConversationManager:
-    """Manager 單例。整個 LOOM 生命週期持有一個。"""
+    """Manager 单例。整个 LOOM 生命周期持有一个。"""
+    _conv_seq: int = 0  # Conversation sequence number (for CxSyTz)
 
     def __init__(self):
         self._conversation: Optional[ConversationRecord] = None
@@ -34,8 +35,9 @@ class _ConversationManager:
         return self._conversation
 
     def get_or_create_conversation(self) -> ConversationRecord:
-        """獲取當前 conversation，不存在則創建。"""
+        """获取当前 conversation，不存在则创建。"""
         if self._conversation is None:
+            _ConversationManager._conv_seq += 1
             self._conversation = ConversationFactory.create()
         elif ConversationFactory.should_close(self._conversation):
             self.close_conversation()
@@ -177,6 +179,7 @@ class _ConversationManager:
             "has_conversation": conv is not None,
             "conversation_id": conv.conversation_id if conv else None,
             "conversation_status": conv.status if conv else None,
+            "conv_seq": _ConversationManager._conv_seq,
             "session_count": len(conv.sessions) if conv else 0,
             "active_session_turns": session.turn_count if session else 0,
             "total_turns": len(conv.all_turns) if conv else 0,

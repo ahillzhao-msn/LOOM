@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from loom.manager.shuttle import Shuttle, step
 from loom.eval import EvalScorer, EvalScore
 from loom.hexagram import (
     hexagram_display, hexagram_chain, hexagram_chain_compact,
@@ -152,74 +153,28 @@ class Recommendation:
 
 
 def recommend(user_input: str) -> Recommendation:
-    """問(5W1H) → 卦 → 召 → 評。四步強制，為 Agent 提供決策素材。
+    """问(5W1H) → 卦 → 召 → 评。四步强制，为 Agent 提供决策素材。"""
+    Shuttle.reset_steps()
 
-    Args:
-        user_input: 使用者原始輸入
+    # Step 1-4: 步骤函数由 @step 装饰器自动注册到 Shuttle._steps
+    w5 = _step_5w1h(user_input)
+    hexagram = _step_hexagram(user_input)
+    hex_id = hexagram.get("id", 0) if isinstance(hexagram, dict) else 0
+    knowledge = _step_recall(user_input, hex_id)
+    evaluation = _step_eval(user_input, knowledge, hexagram)
 
-    Returns:
-        Recommendation: 5W1H + 卦象 + 知識片段 + EVAL 評分
-    """
-    
-
-    # ── Step 1: 問 (5W1H 分解) ──
-    _steps: list[str] = []
-    try:
-        w5 = _step_5w1h(user_input)
-        _dim = sum(1 for v in [w5.what, w5.why, w5.who, w5.where, w5.when, w5.how] if v)
-        _det = w5.what[:10] if w5.what else f"{_dim}維度"
-        _steps.append(f"D問({_det})")
-    except Exception:
-        _steps.append("D問(✗)")
-        w5 = None
-
-    # ── Step 2: 卦 ──
-    try:
-        hexagram = _step_hexagram(user_input)
-        _det = hexagram.get("display_compact", hexagram.get("name", "?"))
-        _steps.append(f"D卦({_det})")
-    except Exception:
-        hexagram = {"id": 0, "name": "✗", "q_value": 0.5, "chain": [],
-                    "display_compact": "✗"}
-        _steps.append("D卦(✗)")
-
-    # ── Step 3: 召 ──
-    try:
-        knowledge = _step_recall(user_input, hexagram.get("id", 0))
-    except Exception:
-        knowledge = []
-    counts = _count_sources(knowledge)
-    _src_parts = []
-    for key, label in [("memory", "M"), ("wiki", "W"),
-                       ("skills", "S"), ("recall", "R"), ("rag", "K")]:
-        cnt = counts.get(key, 0)
-        if cnt:
-            _src_parts.append(f"{label}[{cnt}]")
-    _det = " ".join(_src_parts) if _src_parts else f"{len(knowledge)}條"
-    _steps.append(f"D召({_det})")
-
-    # ── Step 4: 評 ──
-    try:
-        evaluation = _step_eval(user_input, knowledge, hexagram)
-        _det = f"T{evaluation.tier} S{evaluation.score:.2f}"
-        _steps.append(f"D評({_det})")
-    except Exception:
-        evaluation = None
-        _steps.append("D評(✗)")
-
-    # ── Step 5: Loom conversation 生命週期（透明）──
+    # Step 5: Loom conversation 生命周期（透明）
     _auto_loom_lifecycle(
         query=user_input,
         hexagram=hexagram,
         knowledge_items=knowledge,
         eval_score=evaluation,
-        flow_entries=_steps,
+        flow_entries=Shuttle.steps_snapshot(),
         response_time=0.0,
     )
 
-    # ── Step 6: Shuttle 流程鏈輸出 ──
-    from loom.manager.shuttle import Shuttle
-    Shuttle.emit_flow(_steps, title="LOOM", end="done")
+    # Step 6: Shuttle 流程链输出
+    Shuttle.emit_flow(title="LOOM", end="done")
 
     return Recommendation(
         user_input=user_input,
@@ -374,12 +329,9 @@ _METHOD_HINTS: dict[str, str] = {
 }
 
 
-def _step_5w1h(user_input: str) -> FiveWOneH:
-    """從使用者輸入中提取 5W1H 結構。
-
-    使用啟發式規則（非 LLM）做快速分解。
-    模糊無法確定的維度留空——不猜。
-    """
+@step(module="D", action="问")
+def _step_5w1h(user_input: str) -> tuple:
+    """从用户输入中提取 5W1H 结构。"""
     text = user_input.strip()
     text_lower = text.lower()
 
@@ -435,7 +387,9 @@ def _step_5w1h(user_input: str) -> FiveWOneH:
             how_parts.append(label)
     how = ", ".join(how_parts[:3]) if how_parts else ""
 
-    return FiveWOneH(what=what, why=why, who=who, where=where, when=when, how=how)
+    _dim = sum(1 for v in [what, why, who, where, when, how] if v)
+    _detail = what[:10] if what else f"{_dim}维度"
+    return (FiveWOneH(what=what, why=why, who=who, where=where, when=when, how=how), _detail)
 
 
 def _deduplicate_hints(hints: list[str]) -> str:
@@ -453,15 +407,12 @@ def _deduplicate_hints(hints: list[str]) -> str:
 
 
 # ══════════════════════════════════════════════════
-# Step 2: 卦 — YiCeNet 預判
+# Step 2: 卦 — YiCeNet 预判
 # ══════════════════════════════════════════════════
 
-def _step_hexagram(user_input: str, chain_history: list[int] | None = None) -> dict:
-    """調用 YiCeNet 獲取卦象預判。
-
-    返回含 Unicode 符號、六爻、候選卦鏈等顯示資訊。
-    若提供了 chain_history（前幾輪的卦 ID），自動組合卦鏈。
-    """
+@step(module="D", action="卦")
+def _step_hexagram(user_input: str, chain_history: list[int] | None = None) -> tuple:
+    """调用 YiCeNet 获取卦象预判。"""
     try:
         from yicenet.hermes_tool import yicenet_predict
         from yicenet.display import format_prediction
@@ -472,10 +423,10 @@ def _step_hexagram(user_input: str, chain_history: list[int] | None = None) -> d
         hid = result.get("hexagram_id", 0)
         candidates = result.get("candidates", [])
 
-        # 卦鏈：歷史 + 當前
+        # 卦链：历史 + 当前
         chain = (chain_history or []) + [hid] if hid > 0 else (chain_history or [])
 
-        # 提取候選卦 ID 列表
+        # 提取候选卦 ID 列表
         cand_ids = []
         if candidates:
             for c in candidates:
@@ -483,10 +434,10 @@ def _step_hexagram(user_input: str, chain_history: list[int] | None = None) -> d
                 if cid and cid != hid:
                     cand_ids.append(cid)
 
-        # YiCeNet 自持的格式化結果
+        # YiCeNet 自持的格式化结果
         display_compact = format_prediction(result, mode="compact")
 
-        return {
+        return ({
             "id": hid,
             "symbol": hexagram_symbol(hid) if hid > 0 else "?",
             "name": hexagram_display(hid) if hid > 0 else "未占",
@@ -496,18 +447,19 @@ def _step_hexagram(user_input: str, chain_history: list[int] | None = None) -> d
             "candidates": cand_ids,
             "chain": chain,
             "display_compact": display_compact,
-        }
+        }, display_compact or hexagram_display(hid) if hid > 0 else "✗")
     except Exception:
-        return {"id": 0, "name": "✗", "q_value": 0.5, "chain": chain_history or [],
-                "display_compact": "✗"}
+        return ({"id": 0, "name": "✗", "q_value": 0.5, "chain": chain_history or [],
+                 "display_compact": "✗"}, "✗")
 
 
 # ══════════════════════════════════════════════════
-# Step 3: 召 — 全源知識召回
+# Step 3: 召 — 全源知识召回
 # ══════════════════════════════════════════════════
 
-def _step_recall(user_input: str, hexagram_id: int = 0) -> list[dict]:
-    """全源知識召回：RAG + Wiki + Memory/Session/Skills 掃描。"""
+@step(module="D", action="召")
+def _step_recall(user_input: str, hexagram_id: int = 0) -> tuple:
+    """全源知识召回：RAG + Wiki + Memory/Session/Skills 扫描。"""
     try:
         from loom.knowledge.context.context_provider import ContextProvider
         cp = ContextProvider()
@@ -521,31 +473,42 @@ def _step_recall(user_input: str, hexagram_id: int = 0) -> list[dict]:
                 "domain": item.domain,
                 "title": item.title,
             })
-        return items
+        # Build detail from source counts
+        counts = _count_sources(items)
+        src_parts = []
+        for key, label in [("memory", "M"), ("wiki", "W"),
+                           ("skills", "S"), ("recall", "R"), ("rag", "K")]:
+            cnt = counts.get(key, 0)
+            if cnt:
+                src_parts.append(f"{label}[{cnt}]")
+        detail = " ".join(src_parts) if src_parts else f"{len(items)}条"
+        return (items, detail)
     except Exception:
-        return []
+        return ([], "✗")
 
 
 # ══════════════════════════════════════════════════
-# Step 4: 評 — EVAL 五維評估
+# Step 4: 评 — EVAL 五维评估
 # ══════════════════════════════════════════════════
 
+@step(module="D", action="评")
 def _step_eval(user_input: str, knowledge: list[dict],
-               hexagram: dict) -> EvalScore:
-    """EVAL 五維評估（帶知識上下文 + 卦象調製）。"""
+               hexagram: dict) -> tuple:
+    """EVAL 五维评估（带知识上下文 + 卦象调制）。"""
     scorer = EvalScorer()
     score = scorer.from_description(user_input)
 
-    # 卦象調製：Q 值極端時調整風險評估
+    # 卦象调制：Q 值极端时调整风险评估
     q = hexagram.get("q_value", 0.5)
     if q > 0.8:
-        mods = {"F4": 1}  # 高 Q → 卦說安全，降風險
+        mods = {"F4": 1}
     elif q < 0.3:
-        mods = {"F4": -1}  # 低 Q → 卦說謹慎，升風險
+        mods = {"F4": -1}
     else:
         mods = {}
 
     if mods:
         score = score.apply_hexagram_mod(mods)
 
-    return score
+    detail = f"T{score.tier} S{score.score:.2f}"
+    return (score, detail)
