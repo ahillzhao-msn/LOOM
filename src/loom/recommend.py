@@ -125,6 +125,28 @@ class Recommendation:
                     cand_strs.append(hexagram_symbol(cid))
                 if cand_strs:
                     parts.append(f"  候選: {' '.join(cand_strs)}")
+            # 卦链判词（从 session 取跨轮径象 + 策略模式）
+            try:
+                from loom.manager.client import manager as _mgr
+                from loom.manager.shuttle import Shuttle
+                from yicenet.display import hexagram_symbol as _sym
+                _ses = _mgr.active_session
+                if _ses and _ses.turns:
+                    _ids = [t.hexagram.get("id", 0) for t in _ses.turns
+                            if t.hexagram and t.hexagram.get("id", 0) > 0]
+                    if len(_ids) >= 2:
+                        _st = Shuttle.hexagram_strategy()
+                        _named = []
+                        for _hid in _ids:
+                            _symb = _sym(_hid + 1)
+                            _n = hexagram_display(_hid) or ""
+                            _named.append(f"{_symb}{_n}" if _n else _symb)
+                        _chain = " → ".join(_named)
+                        _tag = f" · {_st.get('pattern', '')}" if _st.get('pattern') else ""
+                        _judge = f"\n  判: {_st.get('reason', '')}" if _st.get('reason') else ""
+                        parts.append(f"  卦链: {_chain}{_tag}{_judge}")
+            except Exception:
+                pass
             # 釋義
             if h.get("interpretation"):
                 parts.append(f"  啟示: {h['interpretation']}")
