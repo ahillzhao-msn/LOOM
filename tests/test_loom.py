@@ -16,7 +16,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def reset_manager():
     """每個測試前重置 Loom 單例狀態。"""
-    from loom.loom.manager import manager
+    from loom.manager.client import manager
     manager._conversation = None
     manager._current_turn = None
     yield
@@ -24,13 +24,13 @@ def reset_manager():
 
 @pytest.fixture
 def loom():
-    from loom.loom.manager import manager
+    from loom.manager.client import manager
     return manager
 
 
 @pytest.fixture
 def loom_models():
-    from loom.loom import models
+    from loom.manager import models
     return models
 
 
@@ -197,22 +197,22 @@ class TestReward:
 class TestShuttle:
     def test_flow_chain(self):
         """flow_chain 應返回箭頭分隔的鏈路字串。"""
-        from loom.loom.shuttle import Shuttle
+        from loom.manager.shuttle import Shuttle
         steps = ["D問(5W1H)", "D卦(困)", "D召(K[3])", "D評(T2)"]
         out = Shuttle.flow_chain(steps, end="D固")
         assert out == "D問(5W1H) -> D卦(困) -> D召(K[3]) -> D評(T2) -> D固"
 
     def test_flow_chain_no_end(self):
-        from loom.loom.shuttle import Shuttle
+        from loom.manager.shuttle import Shuttle
         out = Shuttle.flow_chain(["A", "B"])
         assert out == "A -> B"
 
     def test_hexagram_trail_empty(self):
-        from loom.loom.shuttle import Shuttle
+        from loom.manager.shuttle import Shuttle
         assert Shuttle.hexagram_trail([]) == ""
 
     def test_hexagram_trail_single(self):
-        from loom.loom.shuttle import Shuttle
+        from loom.manager.shuttle import Shuttle
         trail = Shuttle.hexagram_trail([46])
         assert isinstance(trail, str)
         assert len(trail) > 0
@@ -220,13 +220,13 @@ class TestShuttle:
         assert "䷮" in trail or "#46" in trail or "䷭" in trail  # 47→困, 47+1=48→井→䷯... depends on mapping
 
     def test_hexagram_trail_pattern_marked(self, loom_models):
-        from loom.loom.shuttle import Shuttle
+        from loom.manager.shuttle import Shuttle
         # 3+ ids with small diff → stable
         trail = Shuttle.hexagram_trail([10, 10, 11])
-        assert "穩定" in trail or "穩定" in trail
+        assert "稳定" in trail
 
     def test_session_tapestry(self, loom, loom_models):
-        from loom.loom.shuttle import Shuttle
+        from loom.manager.shuttle import Shuttle
         loom.start_turn(query="分析", hexagram={"id": 47})
         loom.end_turn()
         loom.start_turn(query="修正", hexagram={"id": 10})
@@ -234,12 +234,12 @@ class TestShuttle:
         session = loom.active_session
         tapestry = Shuttle.session_tapestry(session)
         assert "Session" in tapestry
-        assert "2 輪" in tapestry
+        assert "2 轮" in tapestry
         # key turn 有 correction 應標記
         assert "修正" in tapestry
 
     def test_conversation_tapestry(self, loom):
-        from loom.loom.shuttle import Shuttle
+        from loom.manager.shuttle import Shuttle
         loom.get_or_create_conversation()
         loom.start_turn(query="Q1", hexagram={"id": 10, "q_value": 0.8})
         loom.end_turn()
@@ -253,7 +253,7 @@ class TestShuttle:
         assert "1 sessions" in tapestry or "1 sessions" in tapestry
 
     def test_shuttle_empty_session(self, loom_models):
-        from loom.loom.shuttle import Shuttle
+        from loom.manager.shuttle import Shuttle
         s = loom_models.SessionRecord()
         assert Shuttle.session_tapestry(s) == "(empty session)"
 
@@ -333,14 +333,14 @@ class TestModelProperties:
 class TestConversationBoundary:
     def test_forgetting_score_fresh(self, loom_models):
         """新 conversation 的 forgetting_score 應接近 1.0。"""
-        from loom.loom.factory import ConversationFactory
+        from loom.manager.factory import ConversationFactory
         c = loom_models.ConversationRecord()
         score = ConversationFactory.forgetting_score(c)
         assert 0.9 <= score <= 1.0, f"expected fresh, got {score}"
 
     def test_forgetting_score_decays_with_time(self, loom_models):
         """模擬長時間空白 → score 應低於閾值。"""
-        from loom.loom.factory import ConversationFactory
+        from loom.manager.factory import ConversationFactory
         import time
         # 模擬 130 小時前的 conversation（exp(-0.01*130) = 0.27 < 0.30）
         c = loom_models.ConversationRecord(
@@ -352,8 +352,8 @@ class TestConversationBoundary:
 
     def test_forgetting_score_decays_with_turns(self, loom_models):
         """多輪 + 短時間 → score 應低於閾值（turn + time 組合效應）。"""
-        from loom.loom.factory import ConversationFactory
-        from loom.loom.factory import TurnFactory
+        from loom.manager.factory import ConversationFactory
+        from loom.manager.factory import TurnFactory
         import time
         # 30 輪 + 48h：exp(-0.01*48 - 0.005*30) = exp(-0.63) = 0.53 → 不夠
         # 50 輪 + 72h：exp(-0.01*72 - 0.005*50) = exp(-0.97) = 0.38 → 還不夠
@@ -376,7 +376,7 @@ class TestConversationBoundary:
 
     def test_should_close_drift(self, loom_models):
         """話題漂移時 should_close 應返回 True。"""
-        from loom.loom.factory import ConversationFactory
+        from loom.manager.factory import ConversationFactory
         c = loom_models.ConversationRecord(topic_centroid=[1.0, 0.0, 0.0])
         # 完全不同的向量
         assert ConversationFactory.should_close(
@@ -385,7 +385,7 @@ class TestConversationBoundary:
 
     def test_should_close_same_topic(self, loom_models):
         """同一話題時 should_close 應返回 False。"""
-        from loom.loom.factory import ConversationFactory
+        from loom.manager.factory import ConversationFactory
         c = loom_models.ConversationRecord(topic_centroid=[0.5, 0.5, 0.5])
         assert ConversationFactory.should_close(
             c, new_query_embedding=[0.5, 0.5, 0.5],
@@ -393,7 +393,7 @@ class TestConversationBoundary:
 
     def test_should_close_no_embedding(self, loom_models):
         """無 embedding 時僅靠遺忘曲線判定。"""
-        from loom.loom.factory import ConversationFactory
+        from loom.manager.factory import ConversationFactory
         c = loom_models.ConversationRecord()
         # 新鮮 → 不關
         assert ConversationFactory.should_close(c) is False

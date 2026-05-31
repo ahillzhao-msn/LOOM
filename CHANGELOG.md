@@ -1,6 +1,6 @@
 # KAFED Changelog
 
-## v4.0.1 (2026-05-30) — Refactor: Clean Structure, Shuttle Takes Over
+## v4.0.1 (2026-05-30) — Refactor: Clean Structure, Step Abstraction, Shuttle Takes Over
 
 ### Breaking Changes
 
@@ -11,14 +11,19 @@
 
 ### New Features
 
-- **Shuttle session_render() + conversation_render()** — Session and conversation level summaries output to stderr with `[ LOOM Session ]` and `[ LOOM Conversation ]` tags. Triggered by `_ensure_session()` (session close) and `close_conversation()` (conversation close).
-- **Solidify now emits via Shuttle** — `solidifier.py` removed `flow_step()` dependency; outputs `[ LOOM ]  D固(...)` instead of `[LOOM Pipeline]`.
+- **`Step` dataclass** (`manager/shuttle.py`) — Universal event record with `CxSyTz-N` ID, module, action, detail, status, duration.
+- **`@step()` decorator** — Wraps any function, auto-generates ID, measures duration, registers to `Shuttle._steps`. try/except handled transparently.
+- **Lifecycle events as Steps** — Session open/close (`S/session_open`/`session_close`), Conversation open/close (`C/conversation_open`/`conversation_close`) registered in `Shuttle._steps`.
+- **`Shuttle.register_step()`** — Auto-generates `CxSyTz-N` ID from manager context when called without explicit ID.
+- **`recommend()`** now calls `Shuttle.reset_steps()` at entry and `Shuttle.emit_flow()` at exit. Four step functions decorated with `@step()`.
+- **Solidify emits via Shuttle** — `solidifier.py` removed `flow_step()` dependency; outputs `[ LOOM ]  D固(...)`.
+- **`Shuttle.steps_snapshot()`** — Read-only access to the unified step log. Filter by `id.startswith("C1S2T3")` for per-layer or per-turn queries.
 
 ### Fixes
 
-- **ID collision fix** — `ingest.py: UUID suffix appended on MD5 collision. ChromaDB no longer rejects duplicate IDs.
-- **flow_enabled() default** — Changed from `""` (fallthrough to `isatty()`) to `"1"` (consistent with shuttle). Pipeline suppressed by default.
-- **Missing dependencies** — `PyMuPDF`, `python-docx`, `python-pptx` installed in hermes venv for the PDF ingestion pipeline.
+- **ID collision fix** — `ingest.py`: UUID suffix appended on MD5 collision.
+- **flow_enabled() default** — Changed from `""` (fallthrough to `isatty()`) to `"1"` (consistent with shuttle).
+- **`TurnFactory.from_recommend()`** — Accepts `str`, `tuple`, `Step`, or legacy `FlowEntry` objects.
 
 ### Documentation
 
@@ -26,6 +31,7 @@
 - **README.md** — Advanced Hermes Plugin Integration section for `loom-hooks` and `yicenet-hooks`.
 - **ARCHITECTURE.md** — Updated import path in code example.
 - **CHANGELOG.md** — This entry.
+- **Tests** — 43/43 passed (`test_loom.py`). Test suite path imports updated for new directory structure.
 
 ## v4.0.0 (2026-05-28) — Conversation Context (Loom)
 

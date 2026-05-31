@@ -135,15 +135,20 @@ class Shuttle:
     # ── 织法 1：流程链（每轮即时）──
 
     @staticmethod
-    def flow_chain(steps: list[Step], end: str = "") -> str:
-        """从 Step 对象列表生成流程链文字。
+    def flow_chain(steps: list[Step] | list[str], end: str = "") -> str:
+        """从 Step 对象或字符串列表生成流程链文字。
 
-        输出: D问(5W1H) -> D卦(䷏) -> D召(K[5]W[2]) -> D评(T1 S1.00)
+        兼容两种输入：
+        - list[Step] — 使用 module/action/detail 渲染
+        - list[str] — 直接拼接（向后兼容）
         """
         parts = []
         for s in steps:
-            label = f"{s.module}{s.action}({s.detail})" if s.detail else f"{s.module}{s.action}"
-            parts.append(label)
+            if isinstance(s, str):
+                parts.append(s)
+            else:
+                label = f"{s.module}{s.action}({s.detail})" if s.detail else f"{s.module}{s.action}"
+                parts.append(label)
         line = " -> ".join(parts)
         if end:
             line += f" -> {end}"
