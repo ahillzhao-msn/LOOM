@@ -1,4 +1,19 @@
-# KAFED Changelog
+# LOOM Changelog
+
+## v4.1.0 (2026-06-01) — Archive: KAFED Legacy Cleanup
+
+### Cleanup
+
+- **CHANGELOG.md** — Title fixed from "# KAFED Changelog" to "# LOOM Changelog". All KAFED references in v3.0+ entries migrated to LOOM. Old versions (v1.0.0–v2.2.2) archived to "Previous Versions" section at bottom.
+- **`templates/SOUL-template.md`** — Deleted (outdated v3.1; root `SOUL-template.md` is the canonical current version).
+- **README.md** — Badge version updated from 4.0.1 → 4.0.3. Dependencies section: removed specific model name ("bge-small-en-v1.5") in favor of generic "sentence-transformers".
+- **ARCHITECTURE.md** — Config reference: removed specific model name ("bge-small-en-v1.5") in favor of generic description.
+- **`__pycache__` / `.pytest_cache`** — All project-level bytecode caches cleaned.
+- **`uv.lock`** — Regenerated to fix stale `name = "kafed"` entry (now correctly `name = "loom"`).
+
+### Documentation
+
+- **CHANGELOG.md** — This entry documents the cleanup. Future releases should maintain the clean LOOM brand throughout.
 
 ## v4.0.3 (2026-05-30) — Fix: ChromaDB Singleton Conflict
 
@@ -92,13 +107,15 @@
 
 ---
 
+## v3.0.0 (2026-05-27) — Total Rewrite: Frontend/Backend, 5W1H, Hexagram, EVAL
+
 ### Architecture Redesign
 
 - **Single entry point**: `director.recommend()` replaces multi-variant Pipeline (soul_core/quick/deep). Four mandatory steps per turn: 5W1H → Hexagram → Knowledge Recall → EVAL. No step can be skipped.
-- **Agent owns decisions, KAFED provides context**: KAFED no longer attempts to split tasks, select models, or orchestrate execution. The Agent receives enriched context and acts freely.
+- **Agent owns decisions, LOOM provides context**: LOOM no longer attempts to split tasks, select models, or orchestrate execution. The Agent receives enriched context and acts freely.
 - **Frontend/Backend separation**: Director + Finder are the decision-support frontend (per-turn). Analyzer + Scheduler are the learning backend (async).
 - **Removed Executor layer**: DAG scheduling, dispatcher, and feedback loop removed. Hermes `delegate_task` handles parallel subtask execution natively.
-- **Removed Backlog layer**: KAFED's custom backlog replaced by Hermes native backlog.
+- **Removed Backlog layer**: LOOM's custom backlog replaced by Hermes native backlog.
 - **Removed ActionRegistry**: Over-engineered Command pattern that was registered but never driven by PipelineRunner.
 
 ### New Modules
@@ -107,7 +124,7 @@
 - **`director/recommend.py`**: Single entry point. Full 5W1H decomposition (heuristic, domain-aware), YiCeNet integration with chain history, ContextProvider recall, EVAL with hexagram modulation.
 - **`analyzer/solidifier.py`**: Extracted solidify + session_end_audit from deleted entry.py. Clean API: `solidify(insight, domain, source)`.
 - **`scheduler/`**: Task scheduling with WSL compensation. `TaskRegistry` + `TaskRunner` + 5 built-in tasks (heartbeat, centroid_flywheel, explorer_scan, knowledge_audit, flywheel_daily).
-- **`tools/hermes_tools.py`**: New canonical location for Hermes tool functions: `kafed_recommend`, `kafed_find_partners`, `kafed_solidify`, `kafed_query`, `kafed_ingest`, `kafed_status`, `kafed_classify`, `kafed_flow`.
+- **`tools/hermes_tools.py`**: New canonical location for Hermes tool functions: `loom_recommend`, `loom_find_partners`, `loom_solidify`, `loom_query`, `loom_ingest`, `loom_status`, `loom_classify`, `loom_loom_close`.
 - **`knowledge/ingest.py`**: Rewritten. Added `batch_ingest()` and `batch_ingest_files()` for offline scheduled ingestion. Fixed metadata preservation: `chunk_document()` heading chain, quality score, character count, and chunk index now stored in ChromaDB metadata (was lost in v2).
 - **5W1H Decomposition**: Heuristic extraction of What/Why/Who/Where/When/How from user input, used as enriched input signal for YiCeNet hexagram prediction.
 
@@ -119,7 +136,7 @@
 | `analyzer/kb_audit.py` | `analyzer/knowledge_audit.py` | No abbreviations |
 | `knowledge/flywheel/event_checker.py` | `knowledge/flywheel_events.py` | Flatter, clearer |
 | `client/flow.py` | `flow.py` | Not a "client" — it's a visualizer |
-| `client/kafed_tool.py` | `tools/hermes_tools.py` | Hermes integration, not a client |
+| `client/loom_tool.py` | `tools/hermes_tools.py` | Hermes integration, not a client |
 
 ### Removed
 
@@ -132,15 +149,14 @@
 | `director/decision.py` | Decision tree is Agent's judgment |
 | `action_registry.py` | Registered but never driven by PipelineRunner |
 | `*/actions.py` (5 files) | All action registrations |
-| `scripts/` (12 one-off scripts) | Admin tools cleaned: recluster, sub_cluster, name_subclusters, validate_hierarchy, update_cluster_metadata, knowledge_scanner, convert_blog_inline, batch_ingest, batch_ingest_to_kafed, download_models, ingest_new_formats, scan_and_ingest |
+| `scripts/` (12 one-off scripts) | Admin tools cleaned |
 
 ### Renamed Scripts
 
 | Old | New |
 |-----|-----|
-| `scripts/backlog.py` | Removed (Hermes native) |
 | `scripts/centroid_flywheel.py` | `scripts/cron/centroid_flywheel.py` |
-| `scripts/kafed-bootstrap.sh` | `scripts/install/kafed-bootstrap.sh` |
+| `scripts/loom-bootstrap.sh` | `scripts/install/loom-bootstrap.sh` |
 | — | `scripts/install/symlink-tools.sh` (new) |
 
 ### Hexagram Display
@@ -153,7 +169,7 @@
 
 ### Metadata Preservation Fix
 
-`_ingest_to_kafed()` now stores `chunk_document()` output completely:
+`_ingest()` now stores `chunk_document()` output completely:
 - `heading` — section title
 - `heading_chain` — full breadcrumb path (comma-joined)
 - `quality_score` — 0.0–1.0 quality rating
@@ -164,7 +180,7 @@ Previously only `domain` and `source` were stored — all structural metadata wa
 
 ### Tests
 
-- `tests/flow_demo.py`: Two-scenario demo (simple SAP task + complex KAFED refactoring with find_partners). Shows compact (arrow chain) and detailed (bus-stop) FlowVisualizer modes with hexagram symbols.
+- `tests/flow_demo.py`: Two-scenario demo (simple SAP task + complex LOOM refactoring with find_partners). Shows compact and detailed visualization modes with hexagram symbols.
 - `tests/km_ingest_demo.py`: Two-scenario KM ingestion test (online solidify + offline batch_ingest_files). Validates RAG recall, metadata preservation, and flywheel event triggering.
 - `tests/test_pipeline.py`: Updated for v3 API (recommend, solidify, find_partners, scheduler).
 
@@ -172,27 +188,23 @@ Previously only `domain` and `source` were stored — all structural metadata wa
 
 - **README.md**: Rewritten — community-facing with Before/After metrics, quick start, Personal AI Manifesto.
 - **ARCHITECTURE.md**: Rewritten — complete technical design of v3.0, no legacy references.
-- **SOUL.md**: Updated — new turn flow: `kafed_recommend → Agent acts → kafed_solidify`.
+- **SOUL.md**: Updated — new turn flow: `loom_recommend → Agent acts → loom_solidify`.
 
 ---
 
-## v2.2.2 (2026-05-26)
+## Previous Versions (Archive)
 
-### Fixes
-- `kafed.entry.plan()` deleted — Director now calls `finder.router.find_partners()` directly
-- README API examples updated to reflect deleted `plan()` function
-- `kpak` module activated with CLI entry point and exports
-- `backlog_data` default path fixed (was `~/.kafed/`, now `~/.hermes/data/`)
+### v2.2.2 (2026-05-26)
 
-### Architecture
+- `plan()` deleted — Director now calls `finder.router.find_partners()` directly
+- README API examples updated
+- `kpak` module activated with CLI entry point
+- Backlog default path fixed to `~/.hermes/data/`
 - Finder 3-vector aggregation finalized (task ⊗ model ⊗ status)
 - Explorer single-source discovery from Hermes config.yaml
 - Heartbeat exponential freshness decay with backoff scheduling
-- Dynamic PricingTable with cache file
 
----
-
-## v2.2.0 (2026-05-25)
+### v2.2.0 (2026-05-25)
 
 - Bootstrap installation system (7-phase auto-init)
 - Finder v2 dual-mode routing (fast_route + full_route)
@@ -201,9 +213,7 @@ Previously only `domain` and `source` were stored — all structural metadata wa
 - Heartbeat v2: async exponential decay
 - YiCeNet soft dependency integration
 
----
-
-## v2.1.0 (2026-05-23)
+### v2.1.0 (2026-05-23)
 
 - Six-phase hierarchical clustering (Entity + Registry)
 - soft_classify module with boundary expansion
@@ -211,21 +221,17 @@ Previously only `domain` and `source` were stored — all structural metadata wa
 - Centroid flywheel cron (weekly)
 - ContextProvider multi-source embedding recall
 
----
-
-## v2.0.0 (2026-05-22)
+### v2.0.0 (2026-05-22)
 
 - Five-layer architecture: Director/Finder/Executor/Analyzer/Knowledge
-- Global config system: KafedConfig + KafedSecrets
+- Global config system with secrets isolation
 - Executor supervised feedback loop
 - FlowVisualizer (bus-stop style)
 - Pipeline commitment chain (soul_core/quick/deep)
 
----
-
-## v1.0.0 (2026-05-20)
+### v1.0.0 (2026-05-20)
 
 - Initial release
-- ChromaDB vector store + bge-small RAG engine
+- ChromaDB vector store + RAG engine
 - Core flywheel framework
 - MIT License

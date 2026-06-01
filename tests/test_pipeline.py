@@ -10,7 +10,7 @@ class TestRecommend:
     """recommend() 四步強制：問 → 卦 → 召 → 評。"""
 
     def test_basic_recommend(self):
-        from loom.director.recommend import recommend
+        from loom.recommend import recommend
 
         rec = recommend("SAP PM 工單分析")
         assert rec.user_input == "SAP PM 工單分析"
@@ -25,14 +25,14 @@ class TestRecommend:
         assert 1 <= rec.eval_score.tier <= 3
 
     def test_recommend_inject(self):
-        from loom.director.recommend import recommend
+        from loom.recommend import recommend
 
         rec = recommend("測試")
         text = rec.inject()
         assert "5W1H" in text or "知識召回" in text or "難度" in text
 
     def test_5w1h_extraction(self):
-        from loom.director.recommend import _step_5w1h
+        from loom.recommend import _step_5w1h
 
         w5 = _step_5w1h("如何修復 LOOM 的 Pipeline bug？")
         assert w5.what  # "修復" + "操作指南"

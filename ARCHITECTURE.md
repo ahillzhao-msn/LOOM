@@ -526,7 +526,7 @@ Environment variables  >  loom.yaml  >  Code defaults
 | Category | Properties |
 |----------|-----------|
 | Paths | `data_dir`, `chroma_path`, `vectors_path`, `status_cache_path` |
-| Embedding | `embedding_model` (bge-small-en-v1.5), `embedding_dim` (384) |
+| Embedding | `embedding_model`, `embedding_dim` (384) |
 | Chunking | `chunk_max_chars` (500) |
 | Retrieval | `top_k_default` (5) |
 | Flywheel | E1 thresholds, E2 drift min, E3 growth pct, E4 dedup threshold, E5 stale days |
