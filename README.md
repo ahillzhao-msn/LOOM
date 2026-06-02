@@ -239,6 +239,48 @@ See [docs/loom-architecture.md](docs/loom-architecture.md) for the full design a
 
 ---
 
+## Hermes Plugin: Lifecycle Hooks
+
+LOOM ships with a Hermes Agent plugin that transforms `recommend()` and `solidify()`
+from opt-in tool calls into **always-on lifecycle hooks**. The plugin implements the
+[four-hook architecture](docs/hooks-evolution.md):
+
+| Hook | What | Effect |
+|------|------|--------|
+| `pre_llm_call` | `loom_recommend()` | Injects 5W1H + knowledge recall + EVAL context (plus YiCeNet hexagram internally) |
+| `pre_tool_call` | Tool path inspection | Records target paths for new-tool detection (observe only, never blocks) |
+| `post_tool_call` | Strict new-tool detection | Only solidifies when a new Hermes tool is created (6-condition gate) |
+| `post_llm_call` | Lightweight recording | Sends reward signal to YiCeNet flywheel (no heavy solidify — Option B) |
+| `post_api_request` | Token accumulation | First-hand token cost for accurate reward computation |
+
+The plugin works alongside `yicenet-hooks` (auto-detection via `_loom_hooks_active()`),
+which self-suppresses when LOOM is present — zero duplicate predictions.
+
+### Install
+
+```bash
+# From the LOOM repo
+bash scripts/install/install-loom-hooks.sh
+```
+
+This creates `~/.hermes/plugins/loom-hooks/`, writes plugin.yaml + __init__.py,
+and enables the plugin in config.yaml.
+
+**Requirements:** Hermes Agent, LOOM pip-installed (`pip install -e ~/LOOM`),
+YiCeNet pip-installed (`pip install -e ~/YiCeNet`).
+
+### Design
+
+Full design doc: [docs/hooks-evolution.md](docs/hooks-evolution.md).
+
+Key principles:
+- **Observe first, never block** — `pre_tool_call` only records state, never blocks execution
+- **Strict noise suppression** — `post_tool_call` solidifies only when all 6 conditions met
+- **Option B** — `post_llm_call` is lightweight; heavy solidify controlled by agent
+- **No duplicate predictions** — LOOM absorbs YiCeNet; standalone YiCeNet plugin self-suppresses
+
+---
+
 ## Related
 
 - [YiCeNet](https://github.com/ahillzhao-msn/YiCeNet) — I-Ching neural network, the intuition layer

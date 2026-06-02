@@ -1,15 +1,19 @@
 name: loom-hooks
-version: 1.0.0
+version: 2.0.0
 description: >
-  LOOM knowledge flywheel + YiCeNet hexagram as native Hermes hooks.
-  pre_llm_call → loom_recommend (inject context) + yicenet_predict (hexagram baseline)
-  post_llm_call → loom_solidify (save insights to vector KB)
-  on_session_start → yicenet_predict (establish hexagram baseline)
-  on_session_end → loom_solidify (session-level insights)
+  LOOM knowledge flywheel as native Hermes hooks. 四鉤子架構:
+    pre_llm_call → loom_recommend (inject context)
+    pre_tool_call → tool path inspection (observe only)
+    post_tool_call → strict new-tool detection → selective solidify
+    post_llm_call → lightweight yicenet feedback (no heavy solidify)
+    post_api_request → accumulate token usage
+  Design doc: docs/hooks-evolution.md
 author: Hermes Agent
 hooks:
   - on_session_start
   - pre_llm_call
+  - pre_tool_call
+  - post_tool_call
   - post_llm_call
   - post_api_request
   - on_session_end
