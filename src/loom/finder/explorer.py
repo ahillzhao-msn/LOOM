@@ -676,10 +676,7 @@ def scan(update_roster: bool = False) -> list[WorkerCandidate]:
     """探索所有可用模型。"""
     from loom.manager.shuttle import Shuttle as _Shuttle
     workers = Explorer.scan_all()
-    chain("find/scan", [
-        ("src", "hermes_config", ""),
-        ("hit", f"{len(workers)} workers", ""),
-    ], end="discovery=auto")
+    _Shuttle.display(f"find/scan → src=hermes_config → hit={len(workers)} workers [discovery=auto]")
     for w in workers[:5]:
         print(f"  {w.describe()}")
         roles = w.meta.get("roles", [])
