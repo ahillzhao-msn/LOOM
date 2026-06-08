@@ -5,7 +5,7 @@
 展示層：Shuttle（manager/shuttle.py）"""
 
 
-__version__ = "4.1.0"
+__version__ = "4.2.0"
 
 # ── 公開 API ──
 from loom.recommend import recommend, Recommendation

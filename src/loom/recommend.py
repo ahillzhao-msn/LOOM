@@ -335,7 +335,7 @@ def _do_start_turn(
 # 領域關鍵詞 → 提示 where 維度
 _DOMAIN_HINTS: dict[str, str] = {
     "SAP": "SAP", "PM": "SAP PM", "VC": "SAP VC", "ABAP": "ABAP",
-    "IW": "SAP PM 工單", "CSP": "CSP", "IID": "IID",
+    "IW": "SAP PM 工單", "CSP": "CSP",
     "LOOM": "LOOM", "YiCeNet": "YiCeNet", "Hermes": "Hermes Agent",
     "Python": "Python", "Git": "Git", "GitHub": "GitHub",
     "WSL": "WSL", "Linux": "Linux", "Ubuntu": "Ubuntu",
