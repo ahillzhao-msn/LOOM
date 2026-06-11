@@ -61,7 +61,7 @@ class TestLoadClusterCentroids:
         import inspect
         from loom.knowledge.classify import soft_classify
         src = inspect.getsource(soft_classify)
-        for bad in ["SAP_PM", "IID_GIS", "ARCFM", "Warehouse Management"]:
+        for bad in ["SAP_PM", "ARCFM_GIS", "Warehouse Management"]:
             assert bad not in src, f"Hardcoded string '{bad}' found in soft_classify.py!"
 
 

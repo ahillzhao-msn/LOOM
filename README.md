@@ -7,7 +7,7 @@
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10+-blue.svg">
   <img alt="Chunks" src="https://img.shields.io/badge/Chunks-93K+-green.svg">
   <img alt="Domains" src="https://img.shields.io/badge/Domains-38-purple.svg">
-  <img alt="Version" src="https://img.shields.io/badge/Version-4.1.0-red.svg">
+  <img alt="Version" src="https://img.shields.io/badge/Version-4.2.0-red.svg">
   <img alt="Tests" src="https://img.shields.io/badge/Tests-PASS-brightgreen.svg">
 </p>
 
