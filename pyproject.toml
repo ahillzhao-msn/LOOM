@@ -1,14 +1,14 @@
 [build-system]
-requires = ["setuptools>=75", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
 
 [project]
 name = "loom"
-version = "4.1.0"
+version = "4.2.0"
 description = "Loom — Conversation-level Knowledge Management Engine for AI Agents"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 keywords = ["rag", "knowledge-management", "embeddings", "conversation", "loom"]
 
 authors = [
@@ -35,11 +35,19 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-cov", "ruff"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[project.urls]
+Source = "https://github.com/ahillzhao-msn/LOOM"
+Documentation = "https://github.com/ahillzhao-msn/LOOM#readme"
 
 [project.scripts]
 loom-bootstrap = "loom.install.bootstrap:main"
-loom-heartbeat = "loom.finder.heartbeat:run_tick"
-loom-init = "loom.finder.heartbeat:ensure_running"
-loom-explore = "loom.finder.explorer:scan"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/loom"]
+exclude = ["**/__pycache__/**"]
+
+[tool.hatch.build]
+dev-mode-dirs = ["src"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-cov", "ruff"]

@@ -1,11 +1,15 @@
-"""LOOM — Knowledge Agent Framework for Embedded Data.  v4.0.1
+"""LOOM — Knowledge Agent Framework for Embedded Data.  v4.2.0
 
 核心入口：recommend() → solidify() 知識飛輪
 三層會話管理：Turn → Session → Conversation（manager/）
-展示層：Shuttle（manager/shuttle.py）"""
+展示層：Shuttle（manager/shuttle.py）
+
+Install from PyPI-compatible release:
+  uv pip install loom @ https://github.com/ahillzhao-msn/LOOM/releases/download/v4.2.0/loom-4.2.0-py3-none-any.whl
+"""
 
 
-__version__ = "4.1.0"
+__version__ = "4.2.0"
 
 # ── 公開 API ──
 from loom.recommend import recommend, Recommendation
